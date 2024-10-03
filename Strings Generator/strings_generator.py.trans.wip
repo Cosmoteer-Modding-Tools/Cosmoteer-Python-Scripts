@@ -1,0 +1,282 @@
+# Includes Broken Translation Functionality
+import os
+import re
+import json
+import tkinter as tk
+from tkinter import filedialog, messagebox, scrolledtext
+from googletrans import Translator
+import threading
+
+CONFIG_FILE = 'config.json'
+LANGUAGES = {
+    'en': 'English',
+    'de': 'German',
+    'es': 'Spanish',
+    'fr': 'French',
+    'pt-br': 'Portuguese (Brazil)',
+    'ru': 'Russian',
+    'zh-cn': 'Chinese (Simplified)'
+}
+
+translator = Translator()
+
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_config(config):
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(config, f, indent=4)
+
+# Function to process each rules file and extract NameKey, IconNameKey, and DescriptionKey
+def process_rules_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as file:
+        content = file.read()
+
+    # Find ID, NameKey, IconNameKey, and DescriptionKey
+    id_match = re.search(r'ID\s*=\s*(SW\.[^\s]+)', content)
+    name_key_match = re.search(r'NameKey\s*=\s*"([^"]+)"', content)
+    icon_key_match = re.search(r'IconNameKey\s*=\s*"([^"]+)"', content)
+    description_key_match = re.search(r'DescriptionKey\s*=\s*"([^"]+)"', content)
+
+    entries = []
+
+    if id_match and name_key_match and icon_key_match:
+        id_value = id_match.group(1)
+        name_key = name_key_match.group(1)
+        icon_key = icon_key_match.group(1)
+        description_key = description_key_match.group(1) if description_key_match else None
+
+        # Format the output with a comment for the ID and proper spacing
+        entry = f'\n\t// {id_value}\n'
+        entry += f'\t{name_key.split("/")[-1]}\t\t\t= "{name_key.split("/")[-1]}"\n'
+        entry += f'\t{icon_key.split("/")[-1]}\t\t= "{icon_key.split("/")[-1]}"\n'
+        if description_key:
+            entry += f'\t{description_key.split("/")[-1]}\t= "{description_key.split("/")[-1]}"\n'
+
+        entries.append(entry)
+
+    return entries
+
+# Function to process all .rules files in the root directory and generate output
+def process_rules_directory(root_path):
+    entries = []
+    for root, _, files in os.walk(root_path):
+        for file_name in files:
+            if file_name.endswith('.rules'):
+                file_path = os.path.join(root, file_name)
+                entries += process_rules_file(file_path)
+    return entries
+
+# Function to select the mod.rules file
+def select_mod_file():
+    file_path = filedialog.askopenfilename(
+        title="Select mod.rules file",
+        filetypes=[("Rules files", "*.rules")],
+        initialdir=os.getcwd()
+    )
+    if file_path:
+        root_dir = os.path.dirname(file_path)
+        config = load_config()
+        config['root_dir'] = root_dir
+        save_config(config)
+        entries = process_rules_directory(root_dir)
+        if entries:
+            display_output(entries)
+        else:
+            messagebox.showinfo("No Entries", "No valid entries found in the selected mod.rules file.")
+
+# Function to display the output in a scrollable text box with save options
+def display_output(entries):
+    output_window = tk.Toplevel()
+    output_window.title("Generated .rules Entries")
+
+    output_text = scrolledtext.ScrolledText(output_window, wrap=tk.WORD, width=80, height=25)
+    output_text.pack(padx=10, pady=10)
+    output_text.insert(tk.END, "Parts\n{\n")
+    
+    for entry in entries:
+        output_text.insert(tk.END, entry)
+    
+    output_text.insert(tk.END, "}\n")
+
+    # Save buttons frame
+    buttons_frame = tk.Frame(output_window)
+    buttons_frame.pack(pady=10)
+
+    save_buttons = {}
+    for lang_code, lang_name in LANGUAGES.items():
+        btn = tk.Button(buttons_frame, text=f"Save as {lang_code}.rules", 
+                        command=lambda l=lang_code, e=entries: save_to_file(e, l))
+        btn.pack(side=tk.LEFT, padx=2)
+        save_buttons[lang_code] = btn
+
+    # Save All button
+    save_all_button = tk.Button(output_window, text="Save All Languages", 
+                                command=lambda e=entries: save_all_languages(e))
+    save_all_button.pack(pady=5)
+
+# Function to create strings folder
+def get_strings_folder(root_dir):
+    strings_folder = os.path.join(root_dir, 'strings')
+    if not os.path.exists(strings_folder):
+        os.makedirs(strings_folder)
+    return strings_folder
+
+# Function to translate text
+def translate_text(text, dest_lang):
+    try:
+        translation = translator.translate(text, dest=dest_lang)
+        return translation.text
+    except Exception as e:
+        print(f"Translation error: {e}")
+        return text  # Return original text if translation fails
+
+# Function to handle saving for a single language
+def save_to_file(entries, language):
+    config = load_config()
+    root_dir = config.get('root_dir')
+    if not root_dir:
+        messagebox.showerror("Error", "Root directory not found in config.")
+        return
+
+    strings_folder = get_strings_folder(root_dir)
+    file_name = f"{language}.rules"
+    file_path = os.path.join(strings_folder, file_name)
+
+    if os.path.exists(file_path):
+        result = messagebox.askyesno("File Exists", 
+                                     f"{file_name} already exists. Do you want to save it as a different name?")
+        if not result:
+            return
+        else:
+            new_file_name = filedialog.asksaveasfilename(
+                title="Save As",
+                defaultextension=".rules",
+                filetypes=[("Rules files", "*.rules")],
+                initialdir=strings_folder
+            )
+            if not new_file_name:
+                return
+            file_path = new_file_name
+
+    # Prepare the content with translated values
+    content = "Parts\n{\n"
+    for entry in entries:
+        # Extract the key and value
+        matches = re.findall(r'\t([^\s]+)\s*=\s*"([^"]+)"', entry)
+        translated_entry = entry
+        for key, value in matches:
+            # Translate the value if not English
+            if language != 'en':
+                translated_value = translate_text(value, language)
+            else:
+                translated_value = value
+            # Replace the original value with the translated value
+            translated_entry = translated_entry.replace(f'"{value}"', f'"{translated_value}"')
+        content += translated_entry
+    content += "}\n"
+
+    # Write to the file
+    try:
+        with open(file_path, 'w', encoding='utf-8') as file:
+            file.write(content)
+        messagebox.showinfo("Success", f"File saved successfully as {os.path.basename(file_path)}!")
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to save file: {e}")
+
+# Function to handle saving all languages
+def save_all_languages(entries):
+    config = load_config()
+    root_dir = config.get('root_dir')
+    if not root_dir:
+        messagebox.showerror("Error", "Root directory not found in config.")
+        return
+
+    strings_folder = get_strings_folder(root_dir)
+    # To improve performance, we can perform translations in separate threads
+    def save_language(lang_code):
+        file_name = f"{lang_code}.rules"
+        file_path = os.path.join(strings_folder, file_name)
+
+        if os.path.exists(file_path):
+            result = messagebox.askyesno("File Exists", 
+                                         f"{file_name} already exists. Do you want to save it as a different name?")
+            if not result:
+                return
+            else:
+                new_file_name = filedialog.asksaveasfilename(
+                    title=f"Save {lang_code}.rules As",
+                    defaultextension=".rules",
+                    filetypes=[("Rules files", "*.rules")],
+                    initialdir=strings_folder,
+                    initialfile=lang_code
+                )
+                if not new_file_name:
+                    return
+                file_path = new_file_name
+
+        # Prepare the content with translated values
+        content = "Parts\n{\n"
+        for entry in entries:
+            # Extract the key and value
+            matches = re.findall(r'\t([^\s]+)\s*=\s*"([^"]+)"', entry)
+            translated_entry = entry
+            for key, value in matches:
+                # Translate the value if not English
+                if lang_code != 'en':
+                    translated_value = translate_text(value, lang_code)
+                else:
+                    translated_value = value
+                # Replace the original value with the translated value
+                translated_entry = translated_entry.replace(f'"{value}"', f'"{translated_value}"')
+            content += translated_entry
+        content += "}\n"
+
+        # Write to the file
+        try:
+            with open(file_path, 'w', encoding='utf-8') as file:
+                file.write(content)
+            messagebox.showinfo("Success", f"{lang_code}.rules saved successfully!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save {lang_code}.rules: {e}")
+
+    # Create and start threads for each language to avoid blocking the UI
+    threads = []
+    for lang_code in LANGUAGES.keys():
+        thread = threading.Thread(target=save_language, args=(lang_code,))
+        thread.start()
+        threads.append(thread)
+
+    # Optionally, wait for all threads to finish
+    for thread in threads:
+        thread.join()
+
+    messagebox.showinfo("All Done", "All language files have been processed.")
+
+# Function to create the main UI
+def create_ui():
+    root = tk.Tk()
+    root.title("Rules Generator with Translation")
+    root.geometry("400x200")
+    
+    label = tk.Label(root, text="Select the mod.rules file:")
+    label.pack(pady=20)
+
+    select_button = tk.Button(root, text="Select mod.rules", command=select_mod_file)
+    select_button.pack(pady=10)
+
+    # Optionally, add a button to load from config
+    config = load_config()
+    if 'root_dir' in config:
+        load_button = tk.Button(root, text="Load from Config", 
+                                command=lambda: display_output(process_rules_directory(config['root_dir'])))
+        load_button.pack(pady=5)
+
+    root.mainloop()
+
+# Run the UI
+if __name__ == "__main__":
+    create_ui()
