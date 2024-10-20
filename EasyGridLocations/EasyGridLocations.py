@@ -50,7 +50,13 @@ def create_grid(x_size, y_size):
     main_frame.pack(fill="both", expand=True)
 
     # Instructions
-    instruction_label = tk.Label(main_frame, text="Click cells to toggle block status or door locations.\nGray = Blocked, Green = Allowed Door, Red = Disabled Door", font=("Consolas", 12), pady=10)
+    instruction_label = tk.Label(
+        main_frame,
+        text="Click cells to toggle block status or door locations.\n"
+             "Gray = Blocked, Green = Allowed Door, Red = Disabled Door",
+        font=("Consolas", 12),
+        pady=10
+    )
     instruction_label.pack()
 
     # Grid frame for placing buttons
@@ -60,24 +66,58 @@ def create_grid(x_size, y_size):
     # Create a list to hold the button states for blocked cells and doors
     grid_buttons = [[None for _ in range(x_size + 2)] for _ in range(y_size + 2)]
 
+    # Helper function to identify corner cells
+    def is_corner(x, y):
+        return (x == 0 and y == 0) or \
+               (x == 0 and y == y_size + 1) or \
+               (x == x_size + 1 and y == 0) or \
+               (x == x_size + 1 and y == y_size + 1)
+
     # Create the buttons for each grid cell (make buttons square with consistent size)
     for y in range(y_size + 2):
         for x in range(x_size + 2):
-            if x == 0 or x == x_size + 1 or y == 0 or y == y_size + 1:
+            display_x = x - 1  # Adjust label for correct coordinate system
+            display_y = y - 1
+
+            if is_corner(x, y):
+                # Corner cells: display as disabled labels or buttons
+                btn_corner = tk.Label(
+                    grid_frame,
+                    text=f"[{display_x},{display_y}]",
+                    bg="lightgray",
+                    width=6,
+                    height=3,
+                    font=("Consolas", 10),
+                    relief="solid",
+                    borderwidth=1
+                )
+                btn_corner.grid(row=y, column=x)
+                grid_buttons[y][x] = btn_corner
+            elif x == 0 or x == x_size + 1 or y == 0 or y == y_size + 1:
                 # Edge cells (door locations)
-                display_x = x - 1  # Adjust label for correct coordinate system
-                display_y = y - 1
-                btn_door = tk.Button(grid_frame, text=f"[{display_x},{display_y}]", bg="green", width=6, height=3,
-                                     font=("Consolas", 10),
-                                     command=lambda x=x, y=y: toggle_door(x, y, grid_buttons))
-                btn_door.grid(row=y, column=x)  # Place button in grid layout
+                btn_door = tk.Button(
+                    grid_frame,
+                    text=f"[{display_x},{display_y}]",
+                    bg="green",
+                    width=6,
+                    height=3,
+                    font=("Consolas", 10),
+                    command=lambda x=x, y=y: toggle_door(x, y, grid_buttons)
+                )
+                btn_door.grid(row=y, column=x)
                 grid_buttons[y][x] = btn_door
             else:
                 # Internal cells (blocked or unblocked)
-                btn_block = tk.Button(grid_frame, text=f"[{x-1},{y-1}]", bg="white", width=6, height=3,
-                                      font=("Consolas", 10),
-                                      command=lambda x=x, y=y: toggle_block(x, y, grid_buttons))
-                btn_block.grid(row=y, column=x)  # Place button in grid layout
+                btn_block = tk.Button(
+                    grid_frame,
+                    text=f"[{display_x},{display_y}]",
+                    bg="white",
+                    width=6,
+                    height=3,
+                    font=("Consolas", 10),
+                    command=lambda x=x, y=y: toggle_block(x, y, grid_buttons)
+                )
+                btn_block.grid(row=y, column=x)
                 grid_buttons[y][x] = btn_block
 
     # Frame for Generate Code button
@@ -85,7 +125,12 @@ def create_grid(x_size, y_size):
     button_frame.pack(pady=20)
 
     # Button to generate the final code after grid interaction
-    generate_button = tk.Button(button_frame, text="Generate Code", font=("Consolas", 12), command=lambda: generate_code(x_size, y_size, grid_buttons))
+    generate_button = tk.Button(
+        button_frame,
+        text="Generate Code",
+        font=("Consolas", 12),
+        command=lambda: generate_code(x_size, y_size, grid_buttons)
+    )
     generate_button.pack()
 
     # Frame for the color key at the bottom
@@ -122,6 +167,13 @@ def generate_code(x_size, y_size, grid_buttons):
     door_locations = []
     phys_rect = f"size = [{x_size}, {y_size}]"
 
+    # Helper function to identify corner cells
+    def is_corner(x, y):
+        return (x == 0 and y == 0) or \
+               (x == 0 and y == y_size + 1) or \
+               (x == x_size + 1 and y == 0) or \
+               (x == x_size + 1 and y == y_size + 1)
+
     # Process the blocked travel cells
     for y in range(1, y_size + 1):
         for x in range(1, x_size + 1):
@@ -130,18 +182,40 @@ def generate_code(x_size, y_size, grid_buttons):
             else:
                 blocked_cells.append("\t\t/* [{}, {}] */".format(x - 1, y - 1))  # Commented out by default
 
-    # Process door locations for all perimeter cells
+    # Process door locations for all perimeter cells, excluding corners
     for x in range(x_size + 2):
-        if grid_buttons[0][x].cget("bg") == "green":
-            door_locations.append("\t\t[{}, -1]".format(x - 1))  # Top edge
-        if grid_buttons[y_size + 1][x].cget("bg") == "green":
-            door_locations.append("\t\t[{}, {}]".format(x - 1, y_size))  # Bottom edge
+        # Top edge (y=0), exclude corners
+        if not is_corner(x, 0):
+            if grid_buttons[0][x].cget("bg") == "green":
+                door_locations.append("\t\t[{}, -1]".format(x - 1))  # Top edge
+            elif grid_buttons[0][x].cget("bg") == "red":
+                # Optionally handle disabled doors if needed
+                pass
+
+        # Bottom edge (y=y_size+1), exclude corners
+        if not is_corner(x, y_size + 1):
+            if grid_buttons[y_size + 1][x].cget("bg") == "green":
+                door_locations.append("\t\t[{}, {}]".format(x - 1, y_size))  # Bottom edge
+            elif grid_buttons[y_size + 1][x].cget("bg") == "red":
+                # Optionally handle disabled doors if needed
+                pass
 
     for y in range(1, y_size + 1):
-        if grid_buttons[y][0].cget("bg") == "green":
-            door_locations.append("\t\t[-1, {}]".format(y - 1))  # Left edge
-        if grid_buttons[y][x_size + 1].cget("bg") == "green":
-            door_locations.append("\t\t[{}, {}]".format(x_size, y - 1))  # Right edge
+        # Left edge (x=0), exclude corners
+        if not is_corner(0, y):
+            if grid_buttons[y][0].cget("bg") == "green":
+                door_locations.append("\t\t[-1, {}]".format(y - 1))  # Left edge
+            elif grid_buttons[y][0].cget("bg") == "red":
+                # Optionally handle disabled doors if needed
+                pass
+
+        # Right edge (x=x_size+1), exclude corners
+        if not is_corner(x_size + 1, y):
+            if grid_buttons[y][x_size + 1].cget("bg") == "green":
+                door_locations.append("\t\t[{}, {}]".format(x_size, y - 1))  # Right edge
+            elif grid_buttons[y][x_size + 1].cget("bg") == "red":
+                # Optionally handle disabled doors if needed
+                pass
 
     # Format output for BlockedTravelCells and AllowedDoorLocations
     output_code = (
