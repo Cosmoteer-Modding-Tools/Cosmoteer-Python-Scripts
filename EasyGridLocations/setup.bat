@@ -9,14 +9,39 @@ IF ERRORLEVEL 1 (
     exit /b
 )
 
-:: Create virtual environment
-python -m venv venv
+:: Check if virtual environment exists
+IF NOT EXIST venv (
+    echo Creating virtual environment...
+    python -m venv venv
+    IF ERRORLEVEL 1 (
+        echo Failed to create virtual environment.
+        pause
+        exit /b
+    )
+) ELSE (
+    echo Virtual environment already exists. Skipping creation.
+)
 
 :: Activate virtual environment
 call venv\Scripts\activate
+IF ERRORLEVEL 1 (
+    echo Failed to activate virtual environment.
+    pause
+    exit /b
+)
 
-:: Install dependencies
+:: Upgrade pip to the latest version
+echo Upgrading pip...
+pip install --upgrade pip
+
+:: Install or update dependencies
+echo Installing dependencies from requirements.txt...
 pip install -r requirements.txt
+IF ERRORLEVEL 1 (
+    echo Failed to install dependencies.
+    pause
+    exit /b
+)
 
 echo Setup complete!
 pause

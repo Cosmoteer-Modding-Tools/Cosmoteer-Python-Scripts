@@ -13,7 +13,7 @@ This tool helps create and manage door locations, blocked travel cells, and othe
 
 Git & Python 3.10 or later
 
-## Quick Setup (Windows)
+## Quick Setup & Updates (Windows)
 
 For quick installation and usage of the tool, follow these steps:
 
@@ -25,7 +25,7 @@ For quick installation and usage of the tool, follow these steps:
    cd <repository-folder>
    ```
 
-### 2. Run the Setup Script
+### 2. Run the Setup Script to Install or Update Dependencies
 
 1. In the folder where you downloaded the repository, double-click the **`setup.bat`** file to automatically:
    - Set up a Python virtual environment.
