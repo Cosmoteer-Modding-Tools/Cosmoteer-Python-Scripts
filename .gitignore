@@ -4,3 +4,5 @@ venv/
 env/
 .venv/
 virtualenv/
+Cosmoteer Decal Namer/decal_namer backup.py
+Cosmoteer Decal Namer/decal_namer_debug.py
