@@ -61,7 +61,8 @@ Modders often add new strings or parts to a single, English‑based (or Native) 
 4. **Preview**: Click **Preview** to see changes in tabs.
 5. **Apply**: Click **Apply** to overwrite checked files. Backups are created automatically.
 
-![Screenshot of the tool UI](docs/screenshot.png)
+![image](https://github.com/user-attachments/assets/501c3c9c-326d-4119-bf5b-bc8307bf981d)
+
 
 ---
 
