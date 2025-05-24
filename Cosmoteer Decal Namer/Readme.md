@@ -1,6 +1,7 @@
 # Cosmoteer Decal Namer
 
 A small utility to help Cosmoteer modders generate and manage their decal upgrade lists in the new “Upgrades” block format. Instead of shipping multiple PNGs for each size or variation of the same decal, you can now map old names (and sizes) to a single “upgrade” decal, with optional rotation, flip and invert attributes. Note the game can only scale down so your replacement decal should always be larger than or equal to the original.
+![image](https://github.com/user-attachments/assets/9ac29f87-59da-41e9-999f-0c8929ac93c5)
 
 ---
 
