@@ -1,328 +1,423 @@
-import tkinter as tk
-from tkinter import messagebox, filedialog
-from PIL import Image, ImageTk  # Import Resampling conditionally
-import pyperclip  # For copying text to clipboard
+#!/usr/bin/env python3
+# EasyGridLocations_PySide6.py
+# Python 3.10+, PySide6
 
-# Attempt to import Resampling; fallback if not available
-try:
-    from PIL import Resampling
-    resample_filter = Resampling.LANCZOS
-except ImportError:
-    resample_filter = Image.LANCZOS  # For Pillow versions <10.0.0
+import sys
+import os
+from pathlib import Path
 
-# Initialize the Tkinter main window
-root = tk.Tk()
-root.title("Easy Grid Locations for Cosmoteer")
-root.geometry('600x200')  # Set initial window size
+from PySide6.QtCore import Qt, QRectF, QPointF
+from PySide6.QtGui import (
+    QBrush, QPen, QColor, QPixmap, QFont, QPainter,
+    QFontMetricsF
+)
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QGraphicsScene, QGraphicsView,
+    QGraphicsRectItem, QGraphicsPixmapItem, QGraphicsEllipseItem,
+    QGraphicsTextItem, QFileDialog, QComboBox,
+    QDoubleSpinBox, QTreeWidget, QTreeWidgetItem,
+    QInputDialog, QSlider, QMessageBox
+)
 
-# Create labels and entry fields for X and Y size inputs
-label_x = tk.Label(root, text="X Size:", font=("Consolas", 12))
-label_x.grid(row=0, column=0, padx=20, pady=10, sticky="e")
-entry_x = tk.Entry(root, font=("Consolas", 12))
-entry_x.grid(row=0, column=1, padx=20, pady=10, sticky="w")
+CELL_SIZE = 64
+MAX_INTERIOR = 16
 
-label_y = tk.Label(root, text="Y Size:", font=("Consolas", 12))
-label_y.grid(row=1, column=0, padx=20, pady=10, sticky="e")
-entry_y = tk.Entry(root, font=("Consolas", 12))
-entry_y.grid(row=1, column=1, padx=20, pady=10, sticky="w")
+class GridScene(QGraphicsScene):
+    def __init__(self, width_cells, height_cells, parent=None):
+        super().__init__(parent)
+        self.W = width_cells
+        self.H = height_cells
+        # state: (i,j)->{'type':'door'/'blocked', 'state':0/1/2}
+        self.cell_states = {}
+        self._draw_grid()
 
-# Button to submit the size and create the grid
-def submit_size():
-    try:
-        x_size = int(entry_x.get())
-        y_size = int(entry_y.get())
-        if x_size <= 0 or y_size <= 0:
-            raise ValueError
-        create_grid(x_size, y_size)
-    except ValueError:
-        messagebox.showerror("Input Error", "Please enter valid positive integers for X and Y size.")
+    def _draw_grid(self):
+        total_w = (self.W + 2) * CELL_SIZE
+        total_h = (self.H + 2) * CELL_SIZE
+        # background
+        self.setSceneRect(0, 0, total_w, total_h)
+        # draw cells + coordinate labels
+        for i in range(self.W + 2):
+            for j in range(self.H + 2):
+                rect = QGraphicsRectItem(
+                    i*CELL_SIZE, j*CELL_SIZE, CELL_SIZE, CELL_SIZE
+                )
+                rect.setPen(QPen(Qt.black))
+                rect.setBrush(QBrush(Qt.white))
+                self.addItem(rect)
+                # coordinate label
+                coord = f"{i-1},{j-1}"
+                txt = QGraphicsTextItem(coord)
+                txt.setFont(QFont("Consolas", 10))
+                # semi-transparent so it never fully obscures sprite
+                txt.setDefaultTextColor(QColor(0,0,0,160))
+                # center text in cell
+                fm = QFontMetricsF(txt.font())
+                w = fm.horizontalAdvance(coord)
+                h = fm.height()
+                txt.setPos(i*CELL_SIZE + (CELL_SIZE - w)/2,
+                           j*CELL_SIZE + (CELL_SIZE - h)/2)
+                txt.setZValue(0.1)
+                self.addItem(txt)
+                is_border = i in (0, self.W+1) or j in (0, self.H+1)
+                key = (i-1, j-1)  # interior coords: -1..W, -1..H
+                if is_border and not ((i in (0, self.W+1) and j in (0, self.H+1))):
+                    # perimeter non-corners: door state 0=none,1=allowed,2=disabled
+                    self.cell_states[key] = {'type':'door','state':0,'item':rect}
+                elif not is_border:
+                    # interior: blocked state 0=unblocked,1=blocked
+                    self.cell_states[key] = {'type':'blocked','state':0,'item':rect}
+                # corners: ignore
+        # offset view so interior (0,0) appears at origin
+        # handled in view.translate
 
-submit_button = tk.Button(root, text="Submit Size", command=submit_size, font=("Consolas", 12), bg="lightblue")
-submit_button.grid(row=2, column=0, columnspan=2, padx=20, pady=10)
+    def toggle_cell(self, scene_pos):
+        """Toggle cell at scene_pos based on type and current mode."""
+        # compute indices
+        i = int(scene_pos.x() // CELL_SIZE) - 1
+        j = int(scene_pos.y() // CELL_SIZE) - 1
+        key = (i, j)
+        if key not in self.cell_states:
+            return
+        cell = self.cell_states[key]
+        item = cell['item']
+        if cell['type'] == 'door':
+            # cycle through 0 -> 1 (green) -> 2 (red) -> 0
+            cell['state'] = (cell['state'] + 1) % 3
+            if cell['state'] == 1:
+                item.setBrush(QBrush(QColor('lightgreen')))
+            elif cell['state'] == 2:
+                item.setBrush(QBrush(QColor('lightcoral')))
+            else:
+                item.setBrush(QBrush(Qt.white))
+        else:
+            # interior blocked toggle
+            cell['state'] ^= 1
+            item.setBrush(QBrush(Qt.gray) if cell['state'] else QBrush(Qt.white))
 
-# Create a grid with perimeter for door locations and show a key
-def create_grid(x_size, y_size):
-    # Create a new window for the grid editor
-    grid_window = tk.Toplevel(root)
-    grid_window.title(f"Grid Editor for {x_size}x{y_size} Part")
+    def mousePressEvent(self, event):
+        # override to let MainWindow decide action
+        super().mousePressEvent(event)
+        if hasattr(self, 'click_callback'):
+            self.click_callback(event.scenePos())
 
-    # Define cell size
-    cell_size = 40  # Size per cell in pixels
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("EasyGridLocations")
+        self.setFont(QFont("Consolas", 10))
+        self.last_dir = str(Path.home())
+        self.layers = {}  # name -> dict with keys: item, type, params, visible, parent
+        self._init_ui()
 
-    # Calculate window size
-    grid_width = cell_size * (x_size + 2)
-    grid_height = cell_size * (y_size + 2)
-    window_width = max(grid_width + 100, 800)  # Ensure minimum width of 800
-    window_height = grid_height + 300  # Extra space for instructions and color key
+    def _init_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_l = QHBoxLayout(central)
 
-    # Set minimum window size to ensure UI elements are visible
-    grid_window.minsize(window_width, window_height)
+        # Left: Graphics view
+        self.scene = None
+        self.view = QGraphicsView()
+        # enable antialiasing & smooth pixmap transforms
+        self.view.setRenderHints(
+            self.view.renderHints()
+            | QPainter.Antialiasing
+            | QPainter.SmoothPixmapTransform
+        )        
+        self.view.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        main_l.addWidget(self.view, 3)
 
-    # Set initial window size
-    grid_window.geometry(f"{window_width}x{window_height}")
+        # Right: Controls
+        ctrl = QVBoxLayout()
+        main_l.addLayout(ctrl, 1)
 
-    # Main frame to hold all elements
-    main_frame = tk.Frame(grid_window)
-    main_frame.grid(row=0, column=0, sticky="nsew")
-    grid_window.columnconfigure(0, weight=1)
-    grid_window.rowconfigure(0, weight=1)
+        # Part size input
+        size_h = QHBoxLayout()
+        size_h.addWidget(QLabel("Part size W,H:"))
+        self.size_input = QLineEdit("4,5")
+        size_h.addWidget(self.size_input)
+        btn_gen = QPushButton("Generate Grid")
+        btn_gen.clicked.connect(self.generate_grid)
+        size_h.addWidget(btn_gen)
+        ctrl.addLayout(size_h)
 
-    # Instructions
-    instruction_label = tk.Label(
-        main_frame,
-        text="Click cells to toggle block status or door locations.\n"
-             "Gray = Blocked, Green = Allowed Door, Red = Disabled Door",
-        font=("Consolas", 12),
-        justify="center"
-    )
-    instruction_label.grid(row=0, column=0, padx=10, pady=10, sticky="n")
+        # Sprite overlay
+        btn_sprite = QPushButton("Load Sprite")
+        btn_sprite.clicked.connect(self.load_sprite)
+        ctrl.addWidget(btn_sprite)
 
-    # Buttons frame
-    buttons_frame = tk.Frame(main_frame)
-    buttons_frame.grid(row=1, column=0, pady=(0, 10))
+        # Mode selector
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(["Toggle Cells", "Add Location"])
+        ctrl.addWidget(QLabel("Mode:"))
+        ctrl.addWidget(self.mode_combo)
 
-    # Function to upload and overlay image
-    def upload_image():
-        nonlocal image, image_tk
-        file_path = filedialog.askopenfilename(
-            filetypes=[("PNG Images", "*.png"), ("All Files", "*.*")]
+        # Coordinate mode
+        self.coord_combo = QComboBox()
+        self.coord_combo.addItems(["Direct (abs)", "Offset (from center)"])
+        self.coord_combo.setToolTip(
+            "Direct = absolute [x,y], Offset = relative to part center"
         )
-        if file_path:
-            try:
-                # Open and resize image to fit the internal grid (excluding perimeter)
-                img = Image.open(file_path).convert("RGBA")
-                internal_width = cell_size * x_size
-                internal_height = cell_size * y_size
-                img = img.resize((internal_width, internal_height), resample_filter)
+        ctrl.addWidget(QLabel("Coordinate mode:"))
+        ctrl.addWidget(self.coord_combo)
 
-                # Apply transparency to the image
-                alpha = 150  # Adjust transparency level (0-255)
-                img.putalpha(alpha)
+        # Rotation
+        rot_h = QHBoxLayout()
+        rot_h.addWidget(QLabel("Rotation:"))
+        self.rot_spin = QDoubleSpinBox()
+        self.rot_spin.setRange(0.0, 360.0)
+        self.rot_spin.setSuffix("°")
+        rot_h.addWidget(self.rot_spin)
+        ctrl.addLayout(rot_h)
 
-                image = img
-                image_tk = ImageTk.PhotoImage(img)
+        # Opacity slider
+        ctrl.addWidget(QLabel("Overlay opacity:"))
+        self.opacity_slider = QSlider(Qt.Horizontal)
+        self.opacity_slider.setRange(0, 255)
+        self.opacity_slider.setValue(255)
+        self.opacity_slider.valueChanged.connect(self.update_opacity)
+        ctrl.addWidget(self.opacity_slider)
 
-                # Display the image on the canvas
-                # Remove previous image if any
-                canvas.delete("uploaded_image")
-                # Calculate position to place the image (offset by cell_size)
-                image_id = canvas.create_image(cell_size, cell_size, anchor="nw", image=image_tk, tags="uploaded_image")
-                # Lower the image below the grid lines but above the background
-                canvas.tag_lower("uploaded_image", "grid_lines")
-            except Exception as e:
-                messagebox.showerror("Image Error", f"Failed to load image:\n{e}")
+        # Layer/point list (tree)
+        ctrl.addWidget(QLabel("Layers & Points:"))
+        self.tree = QTreeWidget()
+        self.tree.setHeaderHidden(True)
+        self.tree.itemChanged.connect(self.on_tree_item_changed)
+        ctrl.addWidget(self.tree, 1)
 
-    # Button to upload image
-    upload_button = tk.Button(buttons_frame, text="Upload Image", command=upload_image, font=("Consolas", 12), bg="lightgreen")
-    upload_button.pack(side="left", padx=10)
+        # Copy & Save
+        btn_copy = QPushButton("Copy to Clipboard")
+        btn_copy.clicked.connect(self.copy_code)
+        btn_save = QPushButton("Save .rules")
+        btn_save.clicked.connect(self.save_code)
+        ctrl.addWidget(btn_copy)
+        ctrl.addWidget(btn_save)
 
-    # Function to generate the output code
-    def generate_code():
-        # Initialize empty lists for the arrays
-        blocked_cells = []
-        door_locations = []
-        phys_rect = f"size = [{x_size}, {y_size}]"
+        self.statusBar().showMessage("Ready")
 
-        # Helper function to identify corner cells
-        def is_corner_inner(x, y):
-            return (x == 0 and y == 0) or \
-                   (x == 0 and y == y_size + 1) or \
-                   (x == x_size + 1 and y == 0) or \
-                   (x == x_size + 1 and y == y_size + 1)
+    def generate_grid(self):
+        text = self.size_input.text()
+        try:
+            w, h = map(int, text.split(","))
+            if not (1 <= w <= MAX_INTERIOR and 1 <= h <= MAX_INTERIOR):
+                raise ValueError
+        except ValueError:
+            QMessageBox.warning(self, "Invalid size",
+                                f"Enter two integers between 1 and {MAX_INTERIOR}")
+            return
+        # clear previous
+        self.layers.clear()
+        self.tree.clear()
+        scene = GridScene(w, h)
+        scene.click_callback = self.on_scene_click
+        self.scene = scene
+        self.view.setScene(scene)
+        # translate so interior cell (0,0) at origin
+        self.view.resetTransform()
+        self.view.translate(-CELL_SIZE, -CELL_SIZE)
+        self.statusBar().showMessage(f"Grid {w}×{h} created")
 
-        # Process the blocked travel cells
-        for y in range(1, y_size + 1):
-            for x in range(1, x_size + 1):
-                state = cell_states[y][x]
-                if state == 'blocked':
-                    blocked_cells.append(f"\t\t[{x - 1}, {y - 1}]")
-                else:
-                    blocked_cells.append(f"\t\t/* [{x - 1}, {y - 1}] */")  # Commented out by default
-
-        # Process door locations for all perimeter cells, excluding corners
-        for x in range(x_size + 2):
-            # Top edge (y=0), exclude corners
-            if not is_corner_inner(x, 0):
-                state = cell_states[0][x]
-                if state == 'allowed_door':
-                    door_locations.append(f"\t\t[{x - 1}, -1]")
-                elif state == 'disabled_door':
-                    door_locations.append(f"\t\t/* Disabled Door at [{x - 1}, -1] */")
-
-            # Bottom edge (y=y_size+1), exclude corners
-            if not is_corner_inner(x, y_size + 1):
-                state = cell_states[y_size + 1][x]
-                if state == 'allowed_door':
-                    door_locations.append(f"\t\t[{x - 1}, {y_size}]")
-                elif state == 'disabled_door':
-                    door_locations.append(f"\t\t/* Disabled Door at [{x - 1}, {y_size}] */")
-
-        for y in range(1, y_size + 1):
-            # Left edge (x=0), exclude corners
-            if not is_corner_inner(0, y):
-                state = cell_states[y][0]
-                if state == 'allowed_door':
-                    door_locations.append(f"\t\t[-1, {y - 1}]")
-                elif state == 'disabled_door':
-                    door_locations.append(f"\t\t/* Disabled Door at [-1, {y - 1}] */")
-
-            # Right edge (x=x_size+1), exclude corners
-            if not is_corner_inner(x_size + 1, y):
-                state = cell_states[y][x_size + 1]
-                if state == 'allowed_door':
-                    door_locations.append(f"\t\t[{x_size}, {y - 1}]")
-                elif state == 'disabled_door':
-                    door_locations.append(f"\t\t/* Disabled Door at [{x_size}, {y - 1}] */")
-
-        # Format output for BlockedTravelCells and AllowedDoorLocations
-        output_code = (
-            "AllowedDoorLocations\n[\n" + "\n".join(door_locations) + "\n]\n\n"
-            "BlockedTravelCells\n[\n" + "\n".join(blocked_cells) + "\n]\n\n"
-            f"size = [{x_size}, {y_size}]\n\n"
-            "PhysRects\n[\n\t\tsize = [" + f"{x_size}, {y_size}" + "]\n]\n"
+    def load_sprite(self):
+        if not self.scene:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select sprite file", self.last_dir,
+            "Images (*.png *.jpg *.bmp)"
         )
+        if not path:
+            return
+        self.last_dir = os.path.dirname(path)
+        pix = QPixmap(path)
+        W, H = self.scene.W, self.scene.H
+        # force scale to interior size (or keep aspect if you prefer)
+        pix = pix.scaled(W*CELL_SIZE, H*CELL_SIZE,
+                         Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        item = QGraphicsPixmapItem(pix)
+        item.setOpacity(self.opacity_slider.value()/255.0)
+        item.setZValue(0.5)
+        # center within the interior (border cells = OFFSET of 1)
+        offset_x = CELL_SIZE + (W*CELL_SIZE - pix.width())/2
+        offset_y = CELL_SIZE + (H*CELL_SIZE - pix.height())/2
+        item.setPos(offset_x, offset_y)
 
-        # Display the output code in a text window
-        code_window = tk.Toplevel(root)
-        code_window.title("Generated Code")
-        code_window.geometry(f"600x500")  # Set window size large enough to avoid scroll
+        self.scene.addItem(item)
+        self.layers["__sprite__"] = {
+            'item': item, 'type': 'image', 'params': {
+                'file': path, 'size': (W, H), 'location': (0, 0),
+                'rotation': 0.0
+            }, 'visible': True, 'parent': None
+        }
+        # add to tree
+        node = QTreeWidgetItem(self.tree, ["Sprite"])
+        node.setData(0, Qt.UserRole, "__sprite__")
+        node.setCheckState(0, Qt.Checked)
+        self.statusBar().showMessage("Sprite loaded")
 
-        text_box = tk.Text(code_window, wrap="word", font=("Consolas", 10), bg="lightyellow")
-        text_box.insert("1.0", output_code)
-        text_box.pack(expand=True, fill="both")
+    def update_opacity(self, val):
+        for name, layer in self.layers.items():
+            if layer['type'] == 'image':
+                layer['item'].setOpacity(val / 255.0)
 
-        # Button to copy the code to the clipboard
-        def copy_to_clipboard():
-            pyperclip.copy(text_box.get("1.0", "end-1c"))
-            messagebox.showinfo("Copied", "Code copied to clipboard!")
+    def on_tree_item_changed(self, item, col):
+        name = item.data(0, Qt.UserRole)
+        if name in self.layers:
+            visible = item.checkState(0) == Qt.Checked
+            self.layers[name]['item'].setVisible(visible)
+            self.layers[name]['visible'] = visible
 
-        # Button placed below the text box
-        copy_button = tk.Button(code_window, text="Copy to Clipboard", font=("Consolas", 12), command=copy_to_clipboard)
-        copy_button.pack(pady=10)
+    def on_scene_click(self, scene_pos):
+        if self.mode_combo.currentText() == "Toggle Cells":
+            self.scene.toggle_cell(scene_pos)
+        else:
+            self._handle_add_location(scene_pos)
 
-    # Button to generate code
-    generate_button = tk.Button(buttons_frame, text="Generate Code", command=generate_code, font=("Consolas", 12))
-    generate_button.pack(side="left", padx=10)
-
-    # Canvas frame
-    canvas_frame = tk.Frame(main_frame)
-    canvas_frame.grid(row=2, column=0, pady=10)
-
-    canvas = tk.Canvas(canvas_frame, width=grid_width, height=grid_height)
-    canvas.pack()
-
-    # Load image variables
-    image = None
-    image_tk = None
-
-    # Create a list to hold the cell states
-    # Each cell will have a state: 'unblocked', 'blocked', 'allowed_door', 'disabled_door'
-    cell_states = [[None for _ in range(x_size + 2)] for _ in range(y_size + 2)]
-
-    # Helper function to identify corner cells
-    def is_corner(x, y):
-        return (x == 0 and y == 0) or \
-               (x == 0 and y == y_size + 1) or \
-               (x == x_size + 1 and y == 0) or \
-               (x == x_size + 1 and y == y_size + 1)
-
-    # Draw grid lines
-    for y in range(y_size + 3):
-        canvas.create_line(0, y * cell_size, grid_width, y * cell_size, fill="black", tags="grid_lines")
-    for x in range(x_size + 3):
-        canvas.create_line(x * cell_size, 0, x * cell_size, grid_height, fill="black", tags="grid_lines")
-
-    # Initialize the grid
-    for y in range(y_size + 2):
-        for x in range(x_size + 2):
-            x1 = x * cell_size
-            y1 = y * cell_size
-            x2 = x1 + cell_size
-            y2 = y1 + cell_size
-
-            display_x = x - 1  # Adjust label for correct coordinate system
-            display_y = y - 1
-
-            if is_corner(x, y):
-                # Corner cells: display as disabled rectangles
-                # No fill to keep transparent
-                rect = canvas.create_rectangle(x1, y1, x2, y2, outline="", tags=f"cell_{x}_{y}")
-                # Draw the text label
-                canvas.create_text(x1 + cell_size/2, y1 + cell_size/2, text=f"[{display_x},{display_y}]", font=("Consolas", 10))
-                cell_states[y][x] = 'corner'
-            elif x == 0 or x == x_size + 1 or y == 0 or y == y_size + 1:
-                # Edge cells (door locations)
-                rect = canvas.create_rectangle(x1, y1, x2, y2, fill="", outline="", tags=f"door_{x}_{y}")
-                # Initial color for allowed doors
-                color = "green"
-                canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="", tags=f"door_fill_{x}_{y}")
-                # Draw the text label
-                canvas.create_text(x1 + cell_size/2, y1 + cell_size/2, text=f"[{display_x},{display_y}]", font=("Consolas", 10))
-                cell_states[y][x] = 'allowed_door'
+    def _handle_add_location(self, scene_pos):
+        # compute logical cell coordinate
+        x = scene_pos.x() / CELL_SIZE - 1
+        y = scene_pos.y() / CELL_SIZE - 1
+        # choose type
+        typ, ok = QInputDialog.getItem(
+            self, "Add", "Type:", ["Point Marker", "Image Overlay"], 0, False
+        )
+        if not ok:
+            return
+        if typ == "Point Marker":
+            name, ok2 = QInputDialog.getText(self, "Point Name", "Enter name:")
+            if not ok2 or not name:
+                return
+            # coords
+            if self.coord_combo.currentIndex() == 1:
+                # offset: relative to center
+                cx = self.scene.W / 2 - 0.5
+                cy = self.scene.H / 2 - 0.5
+                rx, ry = x - cx, y - cy
             else:
-                # Internal cells (unblocked by default)
-                rect = canvas.create_rectangle(x1, y1, x2, y2, fill="", outline="", tags=f"cell_{x}_{y}")
-                # Draw the text label
-                canvas.create_text(x1 + cell_size/2, y1 + cell_size/2, text=f"[{display_x},{display_y}]", font=("Consolas", 10))
-                cell_states[y][x] = 'unblocked'
+                rx, ry = x, y
+            rot = self.rot_spin.value()
+            # draw marker
+            dot = QGraphicsEllipseItem(
+                scene_pos.x() - 5, scene_pos.y() - 5, 10, 10
+            )
+            dot.setBrush(QBrush(Qt.red))
+            dot.setRotation(rot)
+            dot.setZValue(1)
+            self.scene.addItem(dot)
+            self.layers[name] = {
+                'item': dot, 'type': 'point',
+                'params': {'location': (rx, ry), 'rotation': rot},
+                'visible': True, 'parent': None
+            }
+            node = QTreeWidgetItem(self.tree, [name])
+            node.setData(0, Qt.UserRole, name)
+            node.setCheckState(0, Qt.Checked)
 
-    # Function to toggle cell state based on click
-    def on_canvas_click(event):
-        # Determine which cell was clicked
-        x_click = event.x // cell_size
-        y_click = event.y // cell_size
-
-        if y_click < 0 or y_click > y_size + 1 or x_click < 0 or x_click > x_size + 1:
-            return  # Click outside grid
-
-        current_state = cell_states[y_click][x_click]
-
-        if current_state == 'corner':
-            return  # Do nothing for corner cells
-        elif current_state in ['allowed_door', 'disabled_door']:
-            # Toggle door state
-            tag = f"door_fill_{x_click}_{y_click}"
-            if current_state == 'allowed_door':
-                # Change to disabled door
-                cell_states[y_click][x_click] = 'disabled_door'
-                color = "red"
+        else:
+            layer_name, ok3 = QInputDialog.getText(
+                self, "Layer Name", "Enter render layer name:"
+            )
+            if not ok3 or not layer_name:
+                return
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Image file", self.last_dir,
+                "Images (*.png *.jpg *.bmp)"
+            )
+            if not path:
+                return
+            self.last_dir = os.path.dirname(path)
+            w_cells, ok4 = QInputDialog.getInt(self, "Width (cells)", "W:", 1, 1, self.scene.W)
+            if not ok4:
+                return
+            h_cells, ok5 = QInputDialog.getInt(self, "Height (cells)", "H:", 1, 1, self.scene.H)
+            if not ok5:
+                return
+            if self.coord_combo.currentIndex() == 1:
+                cx = self.scene.W / 2 - 0.5
+                cy = self.scene.H / 2 - 0.5
+                rx, ry = x - cx, y - cy
             else:
-                # Change to allowed door
-                cell_states[y_click][x_click] = 'allowed_door'
-                color = "green"
-            # Update rectangle color
-            canvas.itemconfig(tag, fill=color)
-        elif current_state in ['unblocked', 'blocked']:
-            # Toggle block state
-            tag = f"cell_fill_{x_click}_{y_click}"
-            if current_state == 'unblocked':
-                # Change to blocked
-                cell_states[y_click][x_click] = 'blocked'
-                color = "gray"
-                canvas.create_rectangle(x_click * cell_size, y_click * cell_size,
-                                        (x_click + 1) * cell_size, (y_click + 1) * cell_size,
-                                        fill=color, outline="", tags=tag)
-            else:
-                # Change to unblocked
-                cell_states[y_click][x_click] = 'unblocked'
-                canvas.delete(tag)
+                rx, ry = x, y
+            rot = self.rot_spin.value()
+            pix = QPixmap(path).scaled(
+                w_cells*CELL_SIZE, h_cells*CELL_SIZE,
+                Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            img = QGraphicsPixmapItem(pix)
+            img.setOpacity(self.opacity_slider.value()/255.0)
+            img.setPos((rx+1)*CELL_SIZE, (ry+1)*CELL_SIZE)
+            img.setRotation(rot)
+            img.setZValue(0.8)
+            self.scene.addItem(img)
+            self.layers[layer_name] = {
+                'item': img, 'type': 'image',
+                'params': {
+                    'file': path, 'size': (w_cells, h_cells),
+                    'location': (rx, ry), 'rotation': rot
+                },
+                'visible': True, 'parent': None
+            }
+            node = QTreeWidgetItem(self.tree, [layer_name])
+            node.setData(0, Qt.UserRole, layer_name)
+            node.setCheckState(0, Qt.Checked)
 
-    # Bind click event to the canvas
-    canvas.bind("<Button-1>", on_canvas_click)
+    def _generate_rules_text(self):
+        lines = []
+        # size
+        lines.append(f"size = [{self.scene.W}, {self.scene.H}]\n")
+        # doors
+        allowed = []
+        for (i, j), c in self.scene.cell_states.items():
+            if c['type'] == 'door' and c['state'] == 1:
+                allowed.append(f"[{i}, {j}]")
+        lines.append("AllowedDoorLocations = [")
+        for a in allowed:
+            lines.append(f"  {a},")
+        lines.append("]\n")
+        # blocked
+        blocked = []
+        for (i, j), c in self.scene.cell_states.items():
+            if c['type'] == 'blocked' and c['state'] == 1:
+                blocked.append(f"[{i}, {j}]")
+        lines.append("BlockedTravelCells = [")
+        for b in blocked:
+            lines.append(f"  {b},")
+        lines.append("]\n")
+        # layers
+        for name, L in self.layers.items():
+            if name == "__sprite__":
+                continue
+            p = L['params']
+            lines.append(f"{name} = {{")
+            if L['type'] == 'image':
+                lines.append(f'  File = "{p["file"]}"')
+                lines.append(f"  Size = [{p['size'][0]}, {p['size'][1]}]")
+            lines.append(f"  Location = [{p['location'][0]}, {p['location'][1]}]")
+            lines.append(f"  Rotation = {p['rotation']}")
+            lines.append("}\n")
+        return "\n".join(lines)
 
-    # Color Key
-    key_frame = tk.Frame(main_frame)
-    key_frame.grid(row=3, column=0, pady=10)
+    def copy_code(self):
+        txt = self._generate_rules_text()
+        QApplication.clipboard().setText(txt)
+        self.statusBar().showMessage("Code copied to clipboard")
 
-    tk.Label(key_frame, text="Color Key:", font=("Consolas", 10, "bold")).pack(pady=5)
-    tk.Label(key_frame, text=" No Fill = Unblocked ", font=("Consolas", 10), relief="solid", width=20).pack(padx=5, pady=2)
-    tk.Label(key_frame, text=" Gray = Blocked ", bg="gray", font=("Consolas", 10), relief="solid", width=20).pack(padx=5, pady=2)
-    tk.Label(key_frame, text=" Green = Allowed Door ", bg="green", font=("Consolas", 10), relief="solid", width=20).pack(padx=5, pady=2)
-    tk.Label(key_frame, text=" Red = Disabled Door ", bg="red", font=("Consolas", 10), relief="solid", width=20).pack(padx=5, pady=2)
+    def save_code(self):
+        txt = self._generate_rules_text()
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save .rules file", self.last_dir, "Rules (*.rules)"
+        )
+        if not path:
+            return
+        self.last_dir = os.path.dirname(path)
+        if not path.endswith(".rules"):
+            path += ".rules"
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(txt)
+        self.statusBar().showMessage(f"Saved to {path}")
 
-    # Configure grid weights for resizing
-    grid_window.rowconfigure(0, weight=1)
-    main_frame.rowconfigure(2, weight=1)
-
-# Run the Tkinter main loop
-root.mainloop()
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    win = MainWindow()
+    win.resize(1200, 800)
+    win.show()
+    sys.exit(app.exec())
