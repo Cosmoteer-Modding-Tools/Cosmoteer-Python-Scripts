@@ -229,6 +229,7 @@ class MainWindow(QMainWindow):
         self.last_dir = str(Path.home())
         self.layers = {}   # name -> {'items':[], 'type','params'}
         self._build_ui()
+        self.thermal_ports = {}  # (i, j) -> True (enabled) or False (disabled)
 
     def _build_ui(self):
         c = QWidget(); self.setCentralWidget(c)
@@ -258,8 +259,9 @@ class MainWindow(QMainWindow):
         # mode selector
         ctrl.addWidget(QLabel("Mode:"))
         self.mode_cb=QComboBox(); self.mode_cb.addItems(
-            ["Toggle Cells","Add Location"]
+            ["Toggle Cells", "Add Location", "Thermal Ports"]
         ); ctrl.addWidget(self.mode_cb)
+        self.mode_cb.currentIndexChanged.connect(self._mode_changed)
         # coord mode global (still shown but per‑dialog overrides)
         ctrl.addWidget(QLabel("Global coord mode:"))
         self.global_coord_cb=QComboBox()
@@ -282,6 +284,68 @@ class MainWindow(QMainWindow):
         ctrl.addWidget(cb); ctrl.addWidget(sv)
         self.statusBar().showMessage("Ready")
 
+    def _mode_changed(self):
+        mode = self.mode_cb.currentText()
+        if mode == "Thermal Ports":
+            self._draw_thermal_ports()
+        else:
+            # Hide port overlays if not in port mode
+            if hasattr(self, "_port_items"):
+                for item in self._port_items:
+                    self.scene.removeItem(item)
+                self._port_items = []
+
+    def _draw_thermal_ports(self):
+        # Remove old port overlays if any
+        if hasattr(self, "_port_items"):
+            try:
+                for item in self._port_items:
+                    if item.scene() is not None:
+                        self.scene.removeItem(item)
+            except RuntimeError:
+                pass
+        self._port_items = []
+        W, H = self.scene.W, self.scene.H
+        arrow_chars = {'Up': '^', 'Down': 'v', 'Left': '<', 'Right': '>'}
+    
+        for (i, j), enabled in self.thermal_ports.items():
+            # Calculate the pixel center of the perimeter cell
+            px = (i+1)*CELL_SIZE + CELL_SIZE//2
+            py = (j+1)*CELL_SIZE + CELL_SIZE//2
+    
+            if enabled:
+                # Figure out direction as above:
+                if j == -1 and 0 <= i < W:
+                    char = '^'
+                elif j == H and 0 <= i < W:
+                    char = 'v'
+                elif i == -1 and 0 <= j < H:
+                    char = '<'
+                elif i == W and 0 <= j < H:
+                    char = '>'
+                else:
+                    continue
+                arrow = QGraphicsTextItem(char)
+                arrow.setFont(QFont("Consolas", 24, QFont.Bold))
+                arrow.setDefaultTextColor(QColor("#FF8800"))
+                arrow.setPos(px-8, py-14)
+                arrow.setZValue(1.5)
+                self.scene.addItem(arrow)
+                self._port_items.append(arrow)
+            else:
+                # Draw a gray "X"
+                size = 14
+                x1, y1 = px - size//2, py - size//2
+                x2, y2 = px + size//2, py + size//2
+                line1 = QGraphicsLineItem(x1, y1, x2, y2)
+                line2 = QGraphicsLineItem(x1, y2, x2, y1)
+                pen = QPen(QColor("gray"), 3)
+                for ln in (line1, line2):
+                    ln.setPen(pen)
+                    ln.setZValue(1.2)
+                    self.scene.addItem(ln)
+                    self._port_items.append(ln)
+
     def on_gen(self):
         txt=self.size_le.text()
         try:
@@ -291,6 +355,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self,"Bad size","Enter W,H between 1 and "+str(MAX_INTERIOR))
             return
         self.layers.clear(); self.tree.clear()
+        self.thermal_ports = {}  # Reset thermal port state
+        self._port_items = []     # Reset port overlay list
         self.scene=GridScene(w,h)
         self.scene.click_cb=self._on_click
         self.view.setScene(self.scene)
@@ -343,13 +409,41 @@ class MainWindow(QMainWindow):
         ln.setZValue(1)
         return ln
 
-    def _on_click(self,pos):
-        if self.mode_cb.currentText()=="Toggle Cells":
+    def _make_arrow_colored(self, x, y, deg, color="#FF8800"):
+        rad = math.radians(deg - 90)
+        ex = x + ARROW_LEN * math.cos(rad)
+        ey = y + ARROW_LEN * math.sin(rad)
+        ln = QGraphicsLineItem(x, y, ex, ey)
+        pen = QPen(QColor(color), 2)
+        ln.setPen(pen)
+        ln.setZValue(1.3)
+        return ln
+
+    def _on_click(self, pos):
+        mode = self.mode_cb.currentText()
+        if mode == "Toggle Cells":
             self.scene.toggle_cell(pos)
-        else:
+        elif mode == "Add Location":
             dlg=AddLocationDialog(self,pos,self.layers,self.scene.W,self.scene.H)
             if dlg.exec()!=QDialog.Accepted: return
             self._add_location(dlg.result)
+        elif mode == "Thermal Ports":
+            # Only perimeter
+            i = int(pos.x() // CELL_SIZE) - 1
+            j = int(pos.y() // CELL_SIZE) - 1
+            W, H = self.scene.W, self.scene.H
+            # Perimeter: x in -1..W, y in -1..H, but only on edges
+            is_perimeter = (
+                (0 <= i < W and (j == -1 or j == H)) or
+                (0 <= j < H and (i == -1 or i == W))
+            )
+            if not is_perimeter:
+                return
+            key = (i, j)
+            # Toggle: default OFF (gray X), then ON (orange arrow), then back
+            enabled = self.thermal_ports.get(key, False)
+            self.thermal_ports[key] = not enabled
+            self._draw_thermal_ports()
 
     def _add_location(self,opts):
         x,y=opts["x"],opts["y"]
@@ -511,6 +605,80 @@ class MainWindow(QMainWindow):
             if c["type"]=="blocked" and c["state"]==1: bld.append(f"[{i},{j}]")
         lines += ["AllowedDoorLocations = ["] + [f"  {a}," for a in ald] + ["]\n"]
         lines += ["BlockedTravelCells = ["] + [f"  {b}," for b in bld] + ["]\n"]
+
+        # --- Thermal Ports ---
+        port_lines = []
+        W, H = self.scene.W, self.scene.H
+
+        # Collect all enabled ports and their info
+        port_info = []
+        for (i, j), enabled in sorted(self.thermal_ports.items()):
+            if not enabled:
+                continue
+            # Map to part cell and direction
+            if j == -1 and 0 <= i < W:
+                location = f"[{i},0]"
+                direction = "Up"
+            elif j == H and 0 <= i < W:
+                location = f"[{i},{H-1}]"
+                direction = "Down"
+            elif i == -1 and 0 <= j < H:
+                location = f"[0,{j}]"
+                direction = "Left"
+            elif i == W and 0 <= j < H:
+                location = f"[{W-1},{j}]"
+                direction = "Right"
+            else:
+                continue
+            port_info.append( (location, direction, (i,j)) )
+
+        # Output in chained style for 1x1, otherwise separate blocks
+        if W == 1 and H == 1 and len(port_info) == 4:
+            # 1x1 part, all 4 sides enabled, chained style
+            port_lines.append(
+                "Port_Thermal_Up : ~/Part/^/0/BASE_THERMAL_PORT\n"
+                "{\n"
+                "    Location = [0,0]\n"
+                "    Direction = Up\n"
+                "}"
+            )
+            port_lines.append(
+                "Port_Thermal_Right : Port_Thermal_Up\n"
+                "{\n"
+                "    Direction = Right\n"
+                "}"
+            )
+            port_lines.append(
+                "Port_Thermal_Down : Port_Thermal_Up\n"
+                "{\n"
+                "    Direction = Down\n"
+                "}"
+            )
+            port_lines.append(
+                "Port_Thermal_Left : Port_Thermal_Up\n"
+                "{\n"
+                "    Direction = Left\n"
+                "}"
+            )
+        else:
+            # Output each port block (not chained)
+            counter = {'Up':0, 'Down':0, 'Left':0, 'Right':0}
+            for location, direction, (i,j) in port_info:
+                name = f"Port_Thermal_{direction}{counter[direction]}"
+                counter[direction] += 1
+                port_lines.append(
+                    f"{name} : ~/Part/^/0/BASE_THERMAL_PORT\n"
+                    "{\n"
+                    f"    Location = {location}\n"
+                    f"    Direction = {direction}\n"
+                    "}"
+                )
+
+        if port_lines:
+            lines.append("// --- Thermal Ports ---\n")
+            lines += port_lines
+
+        # <----- THIS BLOCK IS OUTSIDE the if port_lines: block!
         for name,L in self.layers.items():
             if name=="__sprite__": continue
             p=L["params"]
