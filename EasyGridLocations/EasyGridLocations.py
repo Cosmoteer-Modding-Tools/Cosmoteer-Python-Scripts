@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # EasyGridLocations_PySide6_v2.py
-# Requires Python 3.10+ and PySide6>=6.0
-
+# Requires Python 3.10+ and PySide6>=6.0
 import sys, os, math
 from pathlib import Path
 from fractions import Fraction
@@ -81,7 +80,6 @@ class AddLocationDialog(QDialog):
         form.addRow("Base layer:", self.base_cb)
 
         # X/Y
-        # compute default logical coords
         lx = self.click_pos.x()/CELL_SIZE - 1
         ly = self.click_pos.y()/CELL_SIZE - 1
         self.x_le = QLineEdit(f"{lx:.3f}")
@@ -103,7 +101,6 @@ class AddLocationDialog(QDialog):
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
 
-        # show/hide image‑only fields
         self.type_cb.currentIndexChanged.connect(self._update_visibility)
         self.coord_cb.currentIndexChanged.connect(self._update_visibility)
         self._update_visibility()
@@ -121,16 +118,14 @@ class AddLocationDialog(QDialog):
         is_rel = (self.coord_cb.currentText() == "Relative")
         for w in (self.file_le, self.w_sb, self.h_sb):
             w.setVisible(is_img)
-        # also the browse button (it sits in same layout)
         self.file_le.parentWidget().setVisible(is_img)
         self.base_cb.setVisible(is_rel)
-        
+
     def accept(self):
         name = self.name_le.text().strip()
         if not name:
             QMessageBox.warning(self, "Name required", "Please enter a name.")
             return
-        # gather
         typ = "image" if self.type_cb.currentText().startswith("Image") else "point"
         coord_mode = "rel" if self.coord_cb.currentText()=="Relative" else "abs"
         base = (
@@ -170,14 +165,12 @@ class GridScene(QGraphicsScene):
         self.setSceneRect(0,0,tw,th)
         for i in range(self.W+2):
             for j in range(self.H+2):
-                # rectangle
                 rect = QGraphicsRectItem(
                     i*CELL_SIZE, j*CELL_SIZE, CELL_SIZE, CELL_SIZE
                 )
                 rect.setPen(QPen(Qt.black))
                 rect.setBrush(QBrush(Qt.white))
                 self.addItem(rect)
-                # coord label
                 coord = f"{i-1},{j-1}"
                 txt = QGraphicsTextItem(coord)
                 txt.setFont(QFont("Consolas", 10))
@@ -188,7 +181,6 @@ class GridScene(QGraphicsScene):
                            j*CELL_SIZE + (CELL_SIZE-h)/2)
                 txt.setZValue(0.1)
                 self.addItem(txt)
-                # track state
                 is_border = i in (0,self.W+1) or j in (0,self.H+1)
                 key = (i-1,j-1)
                 if is_border and not ((i in (0,self.W+1)) and (j in (0,self.H+1))):
@@ -199,7 +191,6 @@ class GridScene(QGraphicsScene):
                     self.cell_states[key] = {
                         "type":"blocked","state":0,"rect":rect
                     }
-        # click callback set by MainWindow
     def toggle_cell(self, pos):
         i = int(pos.x()//CELL_SIZE)-1
         j = int(pos.y()//CELL_SIZE)-1
@@ -229,13 +220,11 @@ class MainWindow(QMainWindow):
         self.last_dir = str(Path.home())
         self.layers = {}   # name -> {'items':[], 'type','params'}
         self._build_ui()
-        self.thermal_ports = {}  # (i, j) -> True (enabled) or False (disabled)
+        self.thermal_ports = {}
 
     def _build_ui(self):
         c = QWidget(); self.setCentralWidget(c)
         hl = QHBoxLayout(c)
-
-        # graphics
         self.scene = None
         self.view = QGraphicsView()
         self.view.setRenderHints(
@@ -244,41 +233,32 @@ class MainWindow(QMainWindow):
             | QPainter.SmoothPixmapTransform
         )
         hl.addWidget(self.view,3)
-
-        # controls
         ctrl = QVBoxLayout(); hl.addLayout(ctrl,1)
-        # size
         sh = QHBoxLayout()
         sh.addWidget(QLabel("Part size W,H:"))
         self.size_le=QLineEdit("4,5"); sh.addWidget(self.size_le)
         b=QPushButton("Generate"); b.clicked.connect(self.on_gen); sh.addWidget(b)
         ctrl.addLayout(sh)
-        # sprite loader
         btn = QPushButton("Load Sprite"); btn.clicked.connect(self.on_sprite)
         ctrl.addWidget(btn)
-        # mode selector
         ctrl.addWidget(QLabel("Mode:"))
         self.mode_cb=QComboBox(); self.mode_cb.addItems(
             ["Toggle Cells", "Add Location", "Thermal Ports"]
         ); ctrl.addWidget(self.mode_cb)
         self.mode_cb.currentIndexChanged.connect(self._mode_changed)
-        # coord mode global (still shown but per‑dialog overrides)
         ctrl.addWidget(QLabel("Global coord mode:"))
         self.global_coord_cb=QComboBox()
         self.global_coord_cb.addItems(["Direct","Offset"])
         ctrl.addWidget(self.global_coord_cb)
-        # tree
         ctrl.addWidget(QLabel("Layers & Points:"))
         self.tree=QTreeWidget(); self.tree.setHeaderHidden(True)
         self.tree.itemSelectionChanged.connect(self._on_tree_sel)
         ctrl.addWidget(self.tree,1)
-        # properties box
         ctrl.addWidget(QLabel("Properties:"))
         self.props_box=QGroupBox(); self.props_layout=QFormLayout()
         self.props_box.setLayout(self.props_layout)
         ctrl.addWidget(self.props_box)
         self.props_box.hide()
-        # export/copy
         cb=QPushButton("Copy"); cb.clicked.connect(self.on_copy)
         sv=QPushButton("Save"); sv.clicked.connect(self.on_save)
         ctrl.addWidget(cb); ctrl.addWidget(sv)
@@ -289,14 +269,12 @@ class MainWindow(QMainWindow):
         if mode == "Thermal Ports":
             self._draw_thermal_ports()
         else:
-            # Hide port overlays if not in port mode
             if hasattr(self, "_port_items"):
                 for item in self._port_items:
                     self.scene.removeItem(item)
                 self._port_items = []
 
     def _draw_thermal_ports(self):
-        # Remove old port overlays if any
         if hasattr(self, "_port_items"):
             try:
                 for item in self._port_items:
@@ -306,25 +284,25 @@ class MainWindow(QMainWindow):
                 pass
         self._port_items = []
         W, H = self.scene.W, self.scene.H
-        arrow_chars = {'Up': '^', 'Down': 'v', 'Left': '<', 'Right': '>'}
-    
+        for i in range(W):
+            for j in [-1, H]:
+                self.thermal_ports.setdefault((i,j), False)
+        for j in range(H):
+            for i in [-1, W]:
+                self.thermal_ports.setdefault((i,j), False)
         for (i, j), enabled in self.thermal_ports.items():
-            # Calculate the pixel center of the perimeter cell
             px = (i+1)*CELL_SIZE + CELL_SIZE//2
             py = (j+1)*CELL_SIZE + CELL_SIZE//2
-    
-            if enabled:
-                # Figure out direction as above:
-                if j == -1 and 0 <= i < W:
-                    char = '^'
-                elif j == H and 0 <= i < W:
-                    char = 'v'
-                elif i == -1 and 0 <= j < H:
-                    char = '<'
-                elif i == W and 0 <= j < H:
-                    char = '>'
-                else:
-                    continue
+            char = None
+            if j == -1 and 0 <= i < W:
+                char = '^'
+            elif j == H and 0 <= i < W:
+                char = 'v'
+            elif i == -1 and 0 <= j < H:
+                char = '<'
+            elif i == W and 0 <= j < H:
+                char = '>'
+            if char and enabled:
                 arrow = QGraphicsTextItem(char)
                 arrow.setFont(QFont("Consolas", 24, QFont.Bold))
                 arrow.setDefaultTextColor(QColor("#FF8800"))
@@ -332,8 +310,7 @@ class MainWindow(QMainWindow):
                 arrow.setZValue(1.5)
                 self.scene.addItem(arrow)
                 self._port_items.append(arrow)
-            else:
-                # Draw a gray "X"
+            elif char:
                 size = 14
                 x1, y1 = px - size//2, py - size//2
                 x2, y2 = px + size//2, py + size//2
@@ -355,8 +332,14 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self,"Bad size","Enter W,H between 1 and "+str(MAX_INTERIOR))
             return
         self.layers.clear(); self.tree.clear()
-        self.thermal_ports = {}  # Reset thermal port state
-        self._port_items = []     # Reset port overlay list
+        self.thermal_ports = {}
+        for i in range(w):
+            self.thermal_ports[(i,-1)] = False
+            self.thermal_ports[(i,h)] = False
+        for j in range(h):
+            self.thermal_ports[(-1,j)] = False
+            self.thermal_ports[(w,j)] = False
+        self._port_items = []
         self.scene=GridScene(w,h)
         self.scene.click_cb=self._on_click
         self.view.setScene(self.scene)
@@ -374,12 +357,10 @@ class MainWindow(QMainWindow):
         )
         item=QGraphicsPixmapItem(pix)
         item.setOpacity(0.7); item.setZValue(0.5)
-        # center
         ox=(CELL_SIZE + (self.scene.W*CELL_SIZE-pix.width())/2)
         oy=(CELL_SIZE + (self.scene.H*CELL_SIZE-pix.height())/2)
         item.setPos(ox,oy)
         self.scene.addItem(item)
-        # arrow
         arrow=self._make_arrow(ox+pix.width()/2, oy+pix.height()/2, 0)
         self.scene.addItem(arrow)
         name="__sprite__"
@@ -394,12 +375,9 @@ class MainWindow(QMainWindow):
         node=QTreeWidgetItem(self.tree,["Sprite"])
         node.setData(0,Qt.UserRole,name)
         node.setCheckState(0,Qt.Checked)
-        # immediately select this new item so the properties panel updates
         self.tree.setCurrentItem(node)
 
     def _make_arrow(self,x,y,deg):
-        """Returns a QGraphicsLineItem arrow of length ARROW_LEN at (x,y)."""
-        # shift so 0° points north
         rad = math.radians(deg - 90)
         ex = x + ARROW_LEN * math.cos(rad)
         ey = y + ARROW_LEN * math.sin(rad)
@@ -428,11 +406,9 @@ class MainWindow(QMainWindow):
             if dlg.exec()!=QDialog.Accepted: return
             self._add_location(dlg.result)
         elif mode == "Thermal Ports":
-            # Only perimeter
             i = int(pos.x() // CELL_SIZE) - 1
             j = int(pos.y() // CELL_SIZE) - 1
             W, H = self.scene.W, self.scene.H
-            # Perimeter: x in -1..W, y in -1..H, but only on edges
             is_perimeter = (
                 (0 <= i < W and (j == -1 or j == H)) or
                 (0 <= j < H and (i == -1 or i == W))
@@ -440,7 +416,6 @@ class MainWindow(QMainWindow):
             if not is_perimeter:
                 return
             key = (i, j)
-            # Toggle: default OFF (gray X), then ON (orange arrow), then back
             enabled = self.thermal_ports.get(key, False)
             self.thermal_ports[key] = not enabled
             self._draw_thermal_ports()
@@ -451,14 +426,12 @@ class MainWindow(QMainWindow):
             base=opts["base"]
             bx,by=self.layers[base]["params"]["location"]
             x,y = bx+x, by+y
-        # pixel coords
         px,py=(x+1)*CELL_SIZE,(y+1)*CELL_SIZE
         rot=opts["rotation"]
         name=opts["name"]
         if opts["type"]=="point":
             dot=QGraphicsEllipseItem(px-5,py-5,10,10)
             dot.setBrush(QBrush(Qt.red)); dot.setZValue(0.9)
-            # rotation about center
             dot.setTransformOriginPoint(px,py)
             dot.setRotation(rot)
             arr = self._make_arrow(px,py,rot)
@@ -468,14 +441,12 @@ class MainWindow(QMainWindow):
                 "params":{"location":(x,y),"rotation":rot}
             }
         else:
-            # image overlay
             f=opts["file"]; w,h=opts["w"],opts["h"]
             pix = QPixmap(f).scaled(
                 w*CELL_SIZE, h*CELL_SIZE,
                 Qt.IgnoreAspectRatio, Qt.SmoothTransformation
             )
             img=QGraphicsPixmapItem(pix); img.setOpacity(0.7); img.setZValue(0.5)
-            # center image on px,py
             img.setTransformOriginPoint(pix.width()/2,pix.height()/2)
             img.setRotation(rot)
             img.setPos(px - pix.width()/2, py - pix.height()/2)
@@ -485,17 +456,14 @@ class MainWindow(QMainWindow):
                 "items":[img,arr],"type":"image",
                 "params":{"file":f,"size":(w,h),"location":(x,y),"rotation":rot}
             }
-        # add to tree
         node=QTreeWidgetItem(self.tree,[name])
         node.setData(0,Qt.UserRole,name)
         node.setCheckState(0,Qt.Checked)
-        # immediately select this new item so the properties panel updates
         self.tree.setCurrentItem(node)
         self.statusBar().showMessage(f"Added {name}")
 
     def _on_tree_sel(self):
         items = self.tree.selectedItems()
-        # clear out any old widgets
         while self.props_layout.count():
             child = self.props_layout.takeAt(0)
             if child.widget():
@@ -509,49 +477,35 @@ class MainWindow(QMainWindow):
         L = self.layers[key]
         p = L["params"]
         self.props_box.show()
-
-        # ----- Name -----
         self.p_name = QLineEdit(key)
         self.props_layout.addRow("Name:", self.p_name)
-
-        # ----- X / Y -----
         self.p_x = QLineEdit(str(p["location"][0]))
         self.p_y = QLineEdit(str(p["location"][1]))
         self.props_layout.addRow("X:", self.p_x)
         self.props_layout.addRow("Y:", self.p_y)
-
-        # ----- Rotation -----
         self.p_rot = QDoubleSpinBox()
         self.p_rot.setRange(-360.0, 360.0)
         self.p_rot.setValue(p["rotation"])
         self.p_rot.setSuffix("°")
         self.props_layout.addRow("Rotation:", self.p_rot)
-
-        # ----- Remove Button -----
         btn_remove = QPushButton("Remove Layer")
         btn_remove.clicked.connect(lambda: self._remove_layer(key))
         self.props_layout.addRow(btn_remove)
-
-        # ----- Apply Changes -----
         btn_apply = QPushButton("Apply Changes")
         btn_apply.clicked.connect(lambda: self._apply_props(key))
         self.props_layout.addRow(btn_apply)
 
     def _apply_props(self,key):
         L=self.layers[key]; items=L["items"]; p=L["params"]
-        # parse new params
         x=parse_coord(self.p_x.text()); y=parse_coord(self.p_y.text())
         rot=self.p_rot.value()
         p["location"]=(x,y); p["rotation"]=rot
-        # update scene items
-        # pixel
         px,py=(x+1)*CELL_SIZE,(y+1)*CELL_SIZE
         if L["type"]=="point":
             dot,arr=items
             dot.setRect(px-5,py-5,10,10)
             dot.setTransformOriginPoint(px,py)
             dot.setRotation(rot)
-            # arrow
             self.scene.removeItem(arr)
             new_arr=self._make_arrow(px,py,rot)
             self.scene.addItem(new_arr)
@@ -572,7 +526,6 @@ class MainWindow(QMainWindow):
         for item in self.layers[key]["items"]:
             self.scene.removeItem(item)
         del self.layers[key]
-        # remove from tree
         iters = self.tree.findItems(key, Qt.MatchExactly|Qt.MatchRecursive)
         for it in iters:
             parent = it.parent() or self.tree.invisibleRootItem()
@@ -598,87 +551,149 @@ class MainWindow(QMainWindow):
     def _gen_rules(self):
         W,H = self.scene.W, self.scene.H
         lines=[f"size = [{W}, {H}]\n"]
-        # doors
         ald=[]; bld=[]
+        all_door_coords = []
         for (i,j),c in self.scene.cell_states.items():
-            if c["type"]=="door" and c["state"]==1: ald.append(f"[{i},{j}]")
-            if c["type"]=="blocked" and c["state"]==1: bld.append(f"[{i},{j}]")
-        lines += ["AllowedDoorLocations = ["] + [f"  {a}," for a in ald] + ["]\n"]
-        lines += ["BlockedTravelCells = ["] + [f"  {b}," for b in bld] + ["]\n"]
+            if c["type"]=="door":
+                all_door_coords.append((i, j))
+        for (i,j) in all_door_coords:
+            c = self.scene.cell_states[(i,j)]
+            txt = f"[{i},{j}]"
+            if c["state"]==1: ald.append(txt)
+            elif c["state"]==0:
+                ald.append(f"// {txt}")
+        lines += ["AllowedDoorLocations = ["]
+        for a in ald:
+            lines.append(f"  {a},")
+        lines.append("]\n")
+        all_blocked = []
+        for (i,j),c in self.scene.cell_states.items():
+            if c["type"]=="blocked":
+                txt = f"[{i},{j}]"
+                if c["state"]==1:
+                    all_blocked.append(txt)
+                elif c["state"]==0:
+                    all_blocked.append(f"// {txt}")
+        lines += ["BlockedTravelCells = ["]
+        for b in all_blocked:
+            lines.append(f"  {b},")
+        lines.append("]\n")
 
-        # --- Thermal Ports ---
-        port_lines = []
-        W, H = self.scene.W, self.scene.H
-
-        # Collect all enabled ports and their info
-        port_info = []
-        for (i, j), enabled in sorted(self.thermal_ports.items()):
-            if not enabled:
-                continue
-            # Map to part cell and direction
-            if j == -1 and 0 <= i < W:
-                location = f"[{i},0]"
-                direction = "Up"
-            elif j == H and 0 <= i < W:
-                location = f"[{i},{H-1}]"
-                direction = "Down"
-            elif i == -1 and 0 <= j < H:
-                location = f"[0,{j}]"
-                direction = "Left"
-            elif i == W and 0 <= j < H:
-                location = f"[{W-1},{j}]"
-                direction = "Right"
+        # --- Thermal Ports (all possible, vanilla order, commented out if disabled) ---
+        def vanilla_ports_all(W, H, port_status):
+            ports = []
+            # 1x1
+            if W == 1 and H == 1:
+                for dirn in ["Up", "Right", "Down", "Left"]:
+                    enabled = port_status.get((0,0,dirn), False)
+                    name = f"Port_Thermal_{dirn}"
+                    ports.append((name, [0,0], dirn, enabled))
+                return ports
+            # 2x2
+            elif W == 2 and H == 2:
+                order = [
+                    ("Port_Thermal_TopLeft",    [0,0], "Left"),
+                    ("Port_Thermal_LeftUp",     [0,0], "Up"),
+                    ("Port_Thermal_RightUp",    [1,0], "Up"),
+                    ("Port_Thermal_TopRight",   [1,0], "Right"),
+                    ("Port_Thermal_BottomRight",[1,1], "Right"),
+                    ("Port_Thermal_RightDown",  [1,1], "Down"),
+                    ("Port_Thermal_LeftDown",   [0,1], "Down"),
+                    ("Port_Thermal_BottomLeft", [0,1], "Left"),
+                ]
+                for name, loc, dirn in order:
+                    enabled = port_status.get(tuple(loc)+(dirn,), False)
+                    ports.append((name, loc, dirn, enabled))
+                return ports
             else:
-                continue
-            port_info.append( (location, direction, (i,j)) )
+                idxs = {"Left":0, "Down":0, "Right":0, "Up":0}
+                # Left
+                for y in range(H):
+                    n = "Port_Thermal_Left%d" % idxs["Left"]
+                    idxs["Left"] += 1
+                    enabled = port_status.get((0,y,"Left"), False)
+                    ports.append((n, [0,y], "Left", enabled))
+                # Bottom
+                for x in range(1, W):
+                    n = "Port_Thermal_Down%d" % idxs["Down"]
+                    idxs["Down"] += 1
+                    enabled = port_status.get((x,H-1,"Down"), False)
+                    ports.append((n, [x,H-1], "Down", enabled))
+                # Right
+                for y in range(H-2, -1, -1):
+                    n = "Port_Thermal_Right%d" % idxs["Right"]
+                    idxs["Right"] += 1
+                    enabled = port_status.get((W-1,y,"Right"), False)
+                    ports.append((n, [W-1,y], "Right", enabled))
+                # Top
+                for x in range(W-2, 0, -1):
+                    n = "Port_Thermal_Up%d" % idxs["Up"]
+                    idxs["Up"] += 1
+                    enabled = port_status.get((x,0,"Up"), False)
+                    ports.append((n, [x,0], "Up", enabled))
+                return ports
 
-        # Output in chained style for 1x1, otherwise separate blocks
-        if W == 1 and H == 1 and len(port_info) == 4:
-            # 1x1 part, all 4 sides enabled, chained style
-            port_lines.append(
-                "Port_Thermal_Up : ~/Part/^/0/BASE_THERMAL_PORT\n"
-                "{\n"
-                "    Location = [0,0]\n"
-                "    Direction = Up\n"
-                "}"
-            )
-            port_lines.append(
-                "Port_Thermal_Right : Port_Thermal_Up\n"
-                "{\n"
-                "    Direction = Right\n"
-                "}"
-            )
-            port_lines.append(
-                "Port_Thermal_Down : Port_Thermal_Up\n"
-                "{\n"
-                "    Direction = Down\n"
-                "}"
-            )
-            port_lines.append(
-                "Port_Thermal_Left : Port_Thermal_Up\n"
-                "{\n"
-                "    Direction = Left\n"
-                "}"
-            )
-        else:
-            # Output each port block (not chained)
-            counter = {'Up':0, 'Down':0, 'Left':0, 'Right':0}
-            for location, direction, (i,j) in port_info:
-                name = f"Port_Thermal_{direction}{counter[direction]}"
-                counter[direction] += 1
-                port_lines.append(
-                    f"{name} : ~/Part/^/0/BASE_THERMAL_PORT\n"
-                    "{\n"
-                    f"    Location = {location}\n"
-                    f"    Direction = {direction}\n"
-                    "}"
-                )
-
-        if port_lines:
+        port_status = {}
+        for i in range(W):
+            port_status[(i,0,"Up")] = self.thermal_ports.get((i,-1), False)
+            port_status[(i,H-1,"Down")] = self.thermal_ports.get((i,H), False)
+        for j in range(H):
+            port_status[(0,j,"Left")] = self.thermal_ports.get((-1,j), False)
+            port_status[(W-1,j,"Right")] = self.thermal_ports.get((W,j), False)
+        ports = vanilla_ports_all(W, H, port_status)
+        # Output all ports in order, commented out if disabled
+        if ports:
             lines.append("// --- Thermal Ports ---\n")
-            lines += port_lines
+            # Find first enabled port
+            enabled_indices = [i for i, (_, _, _, en) in enumerate(ports) if en]
+            if enabled_indices:
+                first_enabled = enabled_indices[0]
+                prev_enabled_name = None
+                for idx, (name, loc, dirn, enabled) in enumerate(ports):
+                    # If this is the first enabled, always use BASE_THERMAL_PORT
+                    if enabled:
+                        if prev_enabled_name is None:
+                            base = "~/Part/^/0/BASE_THERMAL_PORT"
+                        else:
+                            base = prev_enabled_name
+                        block = [
+                            f"{name} : {base}",
+                            "{",
+                            f"    Location = [{loc[0]}, {loc[1]}]",
+                            f"    Direction = {dirn}",
+                            "}"
+                        ]
+                        lines += block
+                        lines.append("")
+                        prev_enabled_name = name
+                    else:
+                        # Comment out disabled port, show what it would inherit from (find last enabled above)
+                        if prev_enabled_name is None:
+                            base = "~/Part/^/0/BASE_THERMAL_PORT"
+                        else:
+                            base = prev_enabled_name
+                        block = [
+                            f"// {name} : {base}",
+                            "// {",
+                            f"//     Location = [{loc[0]}, {loc[1]}]",
+                            f"//     Direction = {dirn}",
+                            "// }"
+                        ]
+                        lines += block
+                        lines.append("")
+            else:
+                # All ports disabled—comment all as inheriting from BASE_THERMAL_PORT
+                for idx, (name, loc, dirn, enabled) in enumerate(ports):
+                    block = [
+                        f"// {name} : ~/Part/^/0/BASE_THERMAL_PORT",
+                        "// {",
+                        f"//     Location = [{loc[0]}, {loc[1]}]",
+                        f"//     Direction = {dirn}",
+                        "// }"
+                    ]
+                    lines += block
+                    lines.append("")
 
-        # <----- THIS BLOCK IS OUTSIDE the if port_lines: block!
         for name,L in self.layers.items():
             if name=="__sprite__": continue
             p=L["params"]
