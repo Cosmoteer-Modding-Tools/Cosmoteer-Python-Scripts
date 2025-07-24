@@ -1,80 +1,7 @@
 
 # TODO
 # Locations Mode should include a "Crew" option in the AddLocation popup dialog under "Type" menu, it should default the image of a crew member for easier placement (default_images/crew.png).  For convenince it should ensure the size is 1x1 and image orientation iss the same default as adding images manually. When selected it should be at 100% opacity and toggleable in the layer menu (all same features of adding points and images - basically a combination of both allowing the direction arrow to overlay so the user can be precise in its rotation - also adjustable and applyed in properties when highlighted in teh layer menu like the other features.).
-# When outputting Thermal Port code, physical location values don't need to be specified if they are inheriting from a node sharing the same location. This will need to be careful not to break when you toggle off the the inherited value for any reason, it should work similar to the Base Inherit and show up on one of the remaining nodes that previously shared the location.  E.g., Port A and B and C have same location = [0,0], Port C inherits B and B inherits A but each has its own distinct directional value (up left and right).  Port C and B don't need to have a location unless Port A is disabled, if Port A is disabled, then Port B should have its location uncommented, so C can inherit from it (or vice versa).  I think for an easier implementation we should just comment and uncomment out values rather than removing them.  That way we don't have to worry about losing or regenerating code.  
-# Allowed Door locations and Travel Cells code blocks should use the following format - There is a bug currently where the default code block is not being commented out like it should be.  If Neutral (not green or red) the AllowedDoorLocations should be commented out.  If a door is dissallowed (red) and all other perimeter blocks are neutral then the block should be uncommented, and all items in the code block should be uncommented except for the Door(s) that the user wants blocked.  If both green and red (blocked and allowed) doors are toggled, all existing neutral are assumed blocked and commented out.  If a door is allowed (green) and all other doors are neutral, then neutral doors should be assumed blocked (red) should be commented out in the code block.  For simplicity we should output all doors of all perimeter cells by default but comment out the entire Allowed Doors block until the user toggles a perimeter tile red or green.  As a user I should see the verbose code in the Info Panel with the items commented out "//" and have the option to Copy and/or Save the shorter version by ensuring the Include Comments toggle is unchecked.
-# Example A: after output w/include comments is unchecked
-# Requirements Recap
-# All neutral: (Neutral assumed green) Entire AllowedDoorLocations block should be commented out therefore ommiting existence of blocked doors.
-# Any red (blocked) and all others neutral: Block is uncommented, all neutral items are assumed "green" and uncommented except the blocked (red) ones (which are commented).
-# Both green (allowed) and red (blocked): All neutral are assumed blocked and commented out.
-# Any green (allowed) and all others neutral: Neutral doors are assumed blocked (commented out), only allowed doors are uncommented.
-# Default: Output all doors, but comment out the block until a perimeter tile is toggled.
-# AllowedDoorLocations
-#	[
-#		[0, -1]
-#		[-1, 0]
-#	]
-# Example B: 2x3 part - after output w/include comments is checked
-#	AllowedDoorLocations
-#	[
-#		[-1, 2]
-#		[0, 3]
-#		[1, 3]
-#		[2, 2]
-#	]
-#	BlockedTravelCells
-#	[
-#		[0, 0]
-#		[1, 0]
-#	]
-# Example of Code Block from "Blocked Travel Directions" Mode for 2,3 part. (have not implemented this yet) - This should be a Mode Type similar to Doors & Paths, Mutually exclusive as it would need to occupy the same UI space.  Features should include ability to click left right top bottom values within each 64x64 tile internal to part.  Maybe arrows in each direction of the 64x64 tile.  Only Internal (not perimeter door tiles) should show this additional UI. Tiles Blocked Cells via "Doors & Paths" Should appear Grey'd out and not have the arrow UI overlayed Toggling would change the color green to red or something to indicate that direction is allowed or blocked. Default would be Green assuming all directions are enabled (nothing should be defined in the code block if all directions are enabled).  If a direction is blocked, then it should be defined in the code block.  If a direction is allowed, then it should not be defined in the code block.  For simplicity we should output all directions of all internal cells by default but commented out until the user toggles the direction to be blocked.  As a user I should see the verbose code in the Info Panel with the items commented out "//" and have the option to Copy and/or Save the shorter version by ensuring the Include Comments toggle is unchecked.
-#	BlockedTravelCellDirections
-#	[
-#		{
-#			Key = [0, 1]
-#			Value = [Right]
-#		}
-#		{
-#			Key = [1, 1]
-#			Value = [Left]
-#		}
-#	]
-# Example Code Block of Thermal Ports form a 2x2 Part with ports on all sides. Using "Thermal Ports" Mode - Notice how inherit logic is used to shorten the amount code necessary in each Directional Block.  For example., Direction is unnecessary to define in Port_Thermal_RightUp because its inheriting from Port_Thermal_TopLeft, ~/Part/^/0/BASE_THERMAL_PORT is also unnecessary to inherit because it Port_Thermal_TopLeft is already inheriting from it.  This should be the same for all ports, so that we can easily add or remove ports without having to worry about the code being too long or too short. As a user I should see the verbose code in the Info Panel with the items commented out "//" and have the option to Copy and/or Save the shorter version by ensuring the Include Comments toggle is unchecked.
-# 		Port_Thermal_TopLeft : ~/Part/^/0/BASE_THERMAL_PORT
-# 		{
-# 			Location = [0,0]
-# 			Direction = Left
-# 		}
-# 		Port_Thermal_LeftUp : Port_Thermal_TopLeft
-# 		{
-# 			Location = [0, 0]
-# 			Direction = Up
-# 		}
-# 		Port_Thermal_RightUp : Port_Thermal_LeftUp
-# 		{
-# 			Location = [1, 0]
-# 		}
-# 		Port_Thermal_TopRight : Port_Thermal_RightUp
-# 		{
-# 			Direction = Right
-# 		}
-# 		Port_Thermal_BottomRight : Port_Thermal_TopRight
-# 		{
-# 			Location = [1,1]
-# 		}
-# 		Port_Thermal_RightDown : Port_Thermal_BottomRight
-# 		{
-# 			Direction = Down
-# 		}
-# 		Port_Thermal_LeftDown : Port_Thermal_RightDown
-# 		{
-# 			Location = [0,1]
-# 		}
-# 		Port_Thermal_BottomLeft : Port_Thermal_LeftDown
-# 		{
-# 			Direction = Left
-# 		}
+
 #!/usr/bin/env python3
 # EasyGridLocations_PySide6_v2.py
 # Requires Python 3.10+ and PySide6>=6.0
@@ -591,19 +518,7 @@ class MainWindow(QMainWindow):
         mode = self.mode_cb.currentText()
         if mode == "Locations":
             # Generate code for all layers (like in _gen_rules, but only the layers part)
-            lines = []
-            for name, L in self.layers.items():
-                if name == "__sprite__":
-                    continue
-                p = L["params"]
-                lines.append(f"{name} = {{")
-                if L["type"] == "image":
-                    lines.append(f'  File = "{p["file"]}"')
-                    lines.append(f"  Size = [{p['size'][0]}, {p['size'][1]}]")
-                lines.append(f"  Location = [{p['location'][0]}, {p['location'][1]}]")
-                lines.append(f"  Rotation = {p['rotation']}")
-                lines.append("}\n")
-            txt = "\n".join(lines)
+            txt = self._gen_locations_code()
         else:
             raw = self.info_panel.toPlainText()
             txt = self._apply_comment_toggle(raw)
@@ -923,17 +838,7 @@ class MainWindow(QMainWindow):
             lines.append("")
 
         # Locations
-        for name, L in self.layers.items():
-            if name == "__sprite__":
-                continue
-            p = L["params"]
-            lines.append(f"{name} = {{")
-            if L["type"] == "image":
-                lines.append(f'  File = "{p["file"]}"')
-                lines.append(f"  Size = [{p['size'][0]}, {p['size'][1]}]")
-            lines.append(f"  Location = [{p['location'][0]}, {p['location'][1]}]")
-            lines.append(f"  Rotation = {p['rotation']}")
-            lines.append("}\n")
+        lines.append(self._gen_locations_code())
 
         return "\n".join(lines)
 
@@ -1050,6 +955,24 @@ class MainWindow(QMainWindow):
             out.append("]")
 
         return "\n".join(out)
+
+    # === Locations Code Generator ===
+    def _gen_locations_code(self):
+        lines = []
+        for name, L in self.layers.items():
+            if name == "__sprite__":
+                continue
+            p = L["params"]
+            lines.append(f"{name}")
+            lines.append("{")
+            if L["type"] == "image":
+                lines.append(f'    File = "{p["file"]}"')
+                lines.append(f"    Size = [{p['size'][0]}, {p['size'][1]}]")
+            lines.append(f"    Location = [{p['location'][0]}, {p['location'][1]}]")
+            lines.append(f"    Rotation = {p['rotation']}")
+            lines.append("}")
+            lines.append("")
+        return "\n".join(lines)
 
     # === Thermal Ports Code Generator ===
     def _gen_thermal_ports_code(self):
