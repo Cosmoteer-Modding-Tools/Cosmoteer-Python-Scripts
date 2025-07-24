@@ -492,11 +492,11 @@ class MainWindow(QMainWindow):
         self.copy_block_btn.hide()  # Hide at startup, control visibility in _mode_changed
 
         # — Copy / Save / Include‑Comments toggle —
-        cb = QPushButton("Copy")
+        cb = QPushButton("Copy All")
         cb.clicked.connect(self.on_copy)
         ctrl.addWidget(cb)
 
-        sv = QPushButton("Save")
+        sv = QPushButton("Save All")
         sv.clicked.connect(self.on_save)
         ctrl.addWidget(sv)
 
@@ -902,134 +902,39 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Saved {path}")
 
     def _gen_rules(self):
-        mode = self.mode_cb.currentText() if hasattr(self, "mode_cb") else "Doors & Paths"
-        if mode == "Doors & Paths":
-            return self._gen_doors_paths_code()
-        elif mode == "Thermal Ports":
-            return self._gen_thermal_ports_code()
-        elif mode == "Blocked Travel Directions":
-            return self._gen_blocked_travel_dirs_code()
-        # Otherwise, fall back to the original output for Locations
-        W,H = self.scene.W, self.scene.H
-        lines=[f"size = [{W}, {H}]\n"]
-        ald=[]; bld=[]
-        all_door_coords = []
-        for (i,j),c in self.scene.cell_states.items():
-            if c["type"]=="door":
-                all_door_coords.append((i, j))
-        for (i,j) in all_door_coords:
-            c = self.scene.cell_states[(i,j)]
-            txt = f"[{i},{j}]"
-            if c["state"]==1: ald.append(txt)
-            elif c["state"]==0:
-                ald.append(f"// {txt}")
-        lines += ["AllowedDoorLocations = ["]
-        for a in ald:
-            lines.append(f"  {a},")
-        lines.append("]\n")
-        all_blocked = []
-        for (i,j),c in self.scene.cell_states.items():
-            if c["type"]=="blocked":
-                txt = f"[{i},{j}]"
-                if c["state"]==1:
-                    all_blocked.append(txt)
-                elif c["state"]==0:
-                    all_blocked.append(f"// {txt}")
-        lines += ["BlockedTravelCells = ["]
-        for b in all_blocked:
-            lines.append(f"  {b},")
-        lines.append("]\n")    
-        port_status = {}
-        for i in range(W):
-            port_status[(i,0,"Up")] = self.thermal_ports.get((i,-1), False)
-            port_status[(i,H-1,"Down")] = self.thermal_ports.get((i,H), False)
-        for j in range(H):
-            port_status[(0,j,"Left")] = self.thermal_ports.get((-1,j), False)
-            port_status[(W-1,j,"Right")] = self.thermal_ports.get((W,j), False)
-        ports = vanilla_ports_all(W, H, port_status)
-        # Output all ports in order, commented out if disabled
-        if ports:
-            lines.append("// --- Thermal Ports ---\n")
-            enabled_indices = [i for i, (_, _, _, en) in enumerate(ports) if en]
-            if enabled_indices:
-                prev_enabled_name = None
-                last_enabled_for_loc = {}  # (x, y) -> (name, dirn, enabled)
-                last_enabled_for_dir = {}  # dirn -> (name, loc, enabled)
-                for idx, (name, loc, dirn, enabled) in enumerate(ports):
-                    loc_tuple = tuple(loc)
-                    # Determine inheritance base
-                    if prev_enabled_name is None:
-                        base = "~/Part/^/0/BASE_THERMAL_PORT"
-                    else:
-                        base = prev_enabled_name
+        W, H = self.scene.W, self.scene.H
+        lines = [f"size = [{W}, {H}]\n"]
 
-                    parent_for_loc = last_enabled_for_loc.get(loc_tuple, None)
-                    parent_for_dir = last_enabled_for_dir.get(dirn, None)
+        # AllowedDoorLocations & BlockedTravelCells (reuse mode-specific generator for consistency)
+        doors_and_paths = self._gen_doors_paths_code()
+        lines.append(doors_and_paths)
+        lines.append("")
 
-                    # Figure out what the parent (base) port's location and direction are
-                    parent_loc = None
-                    parent_dir = None
-                    if prev_enabled_name is not None:
-                        # Find previous enabled port's loc/dir
-                        prev_idx = idx - 1
-                        while prev_idx >= 0:
-                            prev_port = ports[prev_idx]
-                            if prev_port[3]:  # enabled
-                                parent_loc = tuple(prev_port[1])
-                                parent_dir = prev_port[2]
-                                break
-                            prev_idx -= 1
+        # BlockedTravelCellDirections
+        blocked_dirs = self._gen_blocked_travel_dirs_code()
+        if blocked_dirs.strip():
+            lines.append(blocked_dirs)
+            lines.append("")
 
-                    # Decide what to output
-                    needs_loc = (parent_loc != loc_tuple) if parent_loc is not None else True
-                    needs_dir = (parent_dir != dirn) if parent_dir is not None else True
+        # Thermal Ports
+        thermal_ports = self._gen_thermal_ports_code()
+        if thermal_ports.strip():
+            lines.append(thermal_ports)
+            lines.append("")
 
-                    if enabled:
-                        block = [f"{name} : {base}", "{"]
-                        if needs_loc:
-                            block.append(f"    Location = [{loc[0]}, {loc[1]}]")
-                        if needs_dir:
-                            block.append(f"    Direction = {dirn}")
-                        block.append("}")
-                        lines += block
-                        lines.append("")
-                        prev_enabled_name = name
-                        last_enabled_for_loc[loc_tuple] = (name, dirn, True)
-                        last_enabled_for_dir[dirn] = (name, loc_tuple, True)
-                    else:
-                        block = [f"// {name} : {base}", "// {"]
-                        if needs_loc:
-                            block.append(f"//     Location = [{loc[0]}, {loc[1]}]")
-                        if needs_dir:
-                            block.append(f"//     Direction = {dirn}")
-                        block.append("// }")
-                        lines += block
-                        lines.append("")
-                        last_enabled_for_loc[loc_tuple] = (name, dirn, False)
-                        last_enabled_for_dir[dirn] = (name, loc_tuple, False)
-            else:
-                # All ports disabled—comment all as inheriting from BASE_THERMAL_PORT
-                for idx, (name, loc, dirn, enabled) in enumerate(ports):
-                    block = [
-                        f"// {name} : ~/Part/^/0/BASE_THERMAL_PORT",
-                        "// {",
-                        f"//     Location = [{loc[0]}, {loc[1]}]",
-                        f"//     Direction = {dirn}",
-                        "// }"
-                    ]
-                    lines += block
-                    lines.append("")
-
-        for name,L in self.layers.items():
-            if name=="__sprite__": continue
-            p=L["params"]
+        # Locations
+        for name, L in self.layers.items():
+            if name == "__sprite__":
+                continue
+            p = L["params"]
             lines.append(f"{name} = {{")
-            if L["type"]=="image":
+            if L["type"] == "image":
                 lines.append(f'  File = "{p["file"]}"')
                 lines.append(f"  Size = [{p['size'][0]}, {p['size'][1]}]")
             lines.append(f"  Location = [{p['location'][0]}, {p['location'][1]}]")
             lines.append(f"  Rotation = {p['rotation']}")
             lines.append("}\n")
+
         return "\n".join(lines)
 
     # === Code Viewer Updater ===
