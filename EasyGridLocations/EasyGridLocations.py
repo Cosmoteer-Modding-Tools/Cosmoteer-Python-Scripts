@@ -109,6 +109,54 @@ def parse_coord(s: str) -> float:
     except Exception:
         return 0.0
 
+# --- Thermal Ports (all possible, vanilla order, commented out if disabled) ---
+def vanilla_ports_all(W, H, port_status):
+    ports = []
+    if W == 1 and H == 1:
+        for dirn in ["Up", "Right", "Down", "Left"]:
+            enabled = port_status.get((0,0,dirn), False)
+            name = f"Port_Thermal_{dirn}"
+            ports.append((name, [0,0], dirn, enabled))
+        return ports
+    elif W == 2 and H == 2:
+        order = [
+            ("Port_Thermal_TopLeft",    [0,0], "Left"),
+            ("Port_Thermal_LeftUp",     [0,0], "Up"),
+            ("Port_Thermal_RightUp",    [1,0], "Up"),
+            ("Port_Thermal_TopRight",   [1,0], "Right"),
+            ("Port_Thermal_BottomRight",[1,1], "Right"),
+            ("Port_Thermal_RightDown",  [1,1], "Down"),
+            ("Port_Thermal_LeftDown",   [0,1], "Down"),
+            ("Port_Thermal_BottomLeft", [0,1], "Left"),
+        ]
+        for name, loc, dirn in order:
+            enabled = port_status.get(tuple(loc)+(dirn,), False)
+            ports.append((name, loc, dirn, enabled))
+        return ports
+    else:
+        # Corners (each gets two ports)
+        ports.append(("Port_Thermal_TopLeft", [0,0], "Left", port_status.get((0,0,"Left"), False)))
+        ports.append(("Port_Thermal_LeftUp", [0,0], "Up", port_status.get((0,0,"Up"), False)))
+        ports.append(("Port_Thermal_TopRight", [W-1,0], "Right", port_status.get((W-1,0,"Right"), False)))
+        ports.append(("Port_Thermal_RightUp", [W-1,0], "Up", port_status.get((W-1,0,"Up"), False)))
+        ports.append(("Port_Thermal_BottomRight", [W-1,H-1], "Right", port_status.get((W-1,H-1,"Right"), False)))
+        ports.append(("Port_Thermal_RightDown", [W-1,H-1], "Down", port_status.get((W-1,H-1,"Down"), False)))
+        ports.append(("Port_Thermal_BottomLeft", [0,H-1], "Left", port_status.get((0,H-1,"Left"), False)))
+        ports.append(("Port_Thermal_LeftDown", [0,H-1], "Down", port_status.get((0,H-1,"Down"), False)))
+        # Top edge (excluding corners)
+        for x in range(1, W-1):
+            ports.append((f"Port_Thermal_MidUp{x}", [x,0], "Up", port_status.get((x,0,"Up"), False)))
+        # Right edge (excluding corners)
+        for y in range(1, H-1):
+            ports.append((f"Port_Thermal_MidRight{y}", [W-1,y], "Right", port_status.get((W-1,y,"Right"), False)))
+        # Bottom edge (excluding corners)
+        for x in range(W-2, 0, -1):
+            ports.append((f"Port_Thermal_MidDown{x}", [x,H-1], "Down", port_status.get((x,H-1,"Down"), False)))
+        # Left edge (excluding corners)
+        for y in range(H-2, 0, -1):
+            ports.append((f"Port_Thermal_MidLeft{y}", [0,y], "Left", port_status.get((0,y,"Left"), False)))
+        return ports
+
 class AddLocationDialog(QDialog):
     def __init__(self, parent, click_pos, layers, W, H):
         super().__init__(parent)
@@ -345,6 +393,7 @@ class GridScene(QGraphicsScene):
                     item.setData(0, (x, y, name))
                     self.addItem(item)
                     self._arrow_items.append(item)
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -889,62 +938,7 @@ class MainWindow(QMainWindow):
         lines += ["BlockedTravelCells = ["]
         for b in all_blocked:
             lines.append(f"  {b},")
-        lines.append("]\n")
-
-        # --- Thermal Ports (all possible, vanilla order, commented out if disabled) ---
-        def vanilla_ports_all(W, H, port_status):
-            ports = []
-            # 1x1
-            if W == 1 and H == 1:
-                for dirn in ["Up", "Right", "Down", "Left"]:
-                    enabled = port_status.get((0,0,dirn), False)
-                    name = f"Port_Thermal_{dirn}"
-                    ports.append((name, [0,0], dirn, enabled))
-                return ports
-            # 2x2
-            elif W == 2 and H == 2:
-                order = [
-                    ("Port_Thermal_TopLeft",    [0,0], "Left"),
-                    ("Port_Thermal_LeftUp",     [0,0], "Up"),
-                    ("Port_Thermal_RightUp",    [1,0], "Up"),
-                    ("Port_Thermal_TopRight",   [1,0], "Right"),
-                    ("Port_Thermal_BottomRight",[1,1], "Right"),
-                    ("Port_Thermal_RightDown",  [1,1], "Down"),
-                    ("Port_Thermal_LeftDown",   [0,1], "Down"),
-                    ("Port_Thermal_BottomLeft", [0,1], "Left"),
-                ]
-                for name, loc, dirn in order:
-                    enabled = port_status.get(tuple(loc)+(dirn,), False)
-                    ports.append((name, loc, dirn, enabled))
-                return ports
-            else:
-                idxs = {"Left":0, "Down":0, "Right":0, "Up":0}
-                # Left
-                for y in range(H):
-                    n = "Port_Thermal_Left%d" % idxs["Left"]
-                    idxs["Left"] += 1
-                    enabled = port_status.get((0,y,"Left"), False)
-                    ports.append((n, [0,y], "Left", enabled))
-                # Bottom
-                for x in range(1, W):
-                    n = "Port_Thermal_Down%d" % idxs["Down"]
-                    idxs["Down"] += 1
-                    enabled = port_status.get((x,H-1,"Down"), False)
-                    ports.append((n, [x,H-1], "Down", enabled))
-                # Right
-                for y in range(H-2, -1, -1):
-                    n = "Port_Thermal_Right%d" % idxs["Right"]
-                    idxs["Right"] += 1
-                    enabled = port_status.get((W-1,y,"Right"), False)
-                    ports.append((n, [W-1,y], "Right", enabled))
-                # Top
-                for x in range(W-2, 0, -1):
-                    n = "Port_Thermal_Up%d" % idxs["Up"]
-                    idxs["Up"] += 1
-                    enabled = port_status.get((x,0,"Up"), False)
-                    ports.append((n, [x,0], "Up", enabled))
-                return ports
-
+        lines.append("]\n")    
         port_status = {}
         for i in range(W):
             port_status[(i,0,"Up")] = self.thermal_ports.get((i,-1), False)
@@ -1136,61 +1130,6 @@ class MainWindow(QMainWindow):
     def _gen_thermal_ports_code(self):
         W, H = self.scene.W, self.scene.H
         lines = []
-
-        # --- Thermal Ports (all possible, vanilla order, commented out if disabled) ---
-        def vanilla_ports_all(W, H, port_status):
-            ports = []
-            # 1x1
-            if W == 1 and H == 1:
-                for dirn in ["Up", "Right", "Down", "Left"]:
-                    enabled = port_status.get((0,0,dirn), False)
-                    name = f"Port_Thermal_{dirn}"
-                    ports.append((name, [0,0], dirn, enabled))
-                return ports
-            # 2x2
-            elif W == 2 and H == 2:
-                order = [
-                    ("Port_Thermal_TopLeft",    [0,0], "Left"),
-                    ("Port_Thermal_LeftUp",     [0,0], "Up"),
-                    ("Port_Thermal_RightUp",    [1,0], "Up"),
-                    ("Port_Thermal_TopRight",   [1,0], "Right"),
-                    ("Port_Thermal_BottomRight",[1,1], "Right"),
-                    ("Port_Thermal_RightDown",  [1,1], "Down"),
-                    ("Port_Thermal_LeftDown",   [0,1], "Down"),
-                    ("Port_Thermal_BottomLeft", [0,1], "Left"),
-                ]
-                for name, loc, dirn in order:
-                    enabled = port_status.get(tuple(loc)+(dirn,), False)
-                    ports.append((name, loc, dirn, enabled))
-                return ports
-            else:
-                idxs = {"Left":0, "Down":0, "Right":0, "Up":0}
-                # Left
-                for y in range(H):
-                    n = "Port_Thermal_Left%d" % idxs["Left"]
-                    idxs["Left"] += 1
-                    enabled = port_status.get((0,y,"Left"), False)
-                    ports.append((n, [0,y], "Left", enabled))
-                # Bottom
-                for x in range(1, W):
-                    n = "Port_Thermal_Down%d" % idxs["Down"]
-                    idxs["Down"] += 1
-                    enabled = port_status.get((x,H-1,"Down"), False)
-                    ports.append((n, [x,H-1], "Down", enabled))
-                # Right
-                for y in range(H-2, -1, -1):
-                    n = "Port_Thermal_Right%d" % idxs["Right"]
-                    idxs["Right"] += 1
-                    enabled = port_status.get((W-1,y,"Right"), False)
-                    ports.append((n, [W-1,y], "Right", enabled))
-                # Top
-                for x in range(W-2, 0, -1):
-                    n = "Port_Thermal_Up%d" % idxs["Up"]
-                    idxs["Up"] += 1
-                    enabled = port_status.get((x,0,"Up"), False)
-                    ports.append((n, [x,0], "Up", enabled))
-                return ports
-
         port_status = {}
         for i in range(W):
             port_status[(i,0,"Up")] = self.thermal_ports.get((i,-1), False)
