@@ -950,43 +950,63 @@ class MainWindow(QMainWindow):
         # Output all ports in order, commented out if disabled
         if ports:
             lines.append("// --- Thermal Ports ---\n")
-            # Find first enabled port
             enabled_indices = [i for i, (_, _, _, en) in enumerate(ports) if en]
             if enabled_indices:
-                first_enabled = enabled_indices[0]
                 prev_enabled_name = None
+                last_enabled_for_loc = {}  # (x, y) -> (name, dirn, enabled)
+                last_enabled_for_dir = {}  # dirn -> (name, loc, enabled)
                 for idx, (name, loc, dirn, enabled) in enumerate(ports):
-                    # If this is the first enabled, always use BASE_THERMAL_PORT
+                    loc_tuple = tuple(loc)
+                    # Determine inheritance base
+                    if prev_enabled_name is None:
+                        base = "~/Part/^/0/BASE_THERMAL_PORT"
+                    else:
+                        base = prev_enabled_name
+
+                    parent_for_loc = last_enabled_for_loc.get(loc_tuple, None)
+                    parent_for_dir = last_enabled_for_dir.get(dirn, None)
+
+                    # Figure out what the parent (base) port's location and direction are
+                    parent_loc = None
+                    parent_dir = None
+                    if prev_enabled_name is not None:
+                        # Find previous enabled port's loc/dir
+                        prev_idx = idx - 1
+                        while prev_idx >= 0:
+                            prev_port = ports[prev_idx]
+                            if prev_port[3]:  # enabled
+                                parent_loc = tuple(prev_port[1])
+                                parent_dir = prev_port[2]
+                                break
+                            prev_idx -= 1
+
+                    # Decide what to output
+                    needs_loc = (parent_loc != loc_tuple) if parent_loc is not None else True
+                    needs_dir = (parent_dir != dirn) if parent_dir is not None else True
+
                     if enabled:
-                        if prev_enabled_name is None:
-                            base = "~/Part/^/0/BASE_THERMAL_PORT"
-                        else:
-                            base = prev_enabled_name
-                        block = [
-                            f"{name} : {base}",
-                            "{",
-                            f"    Location = [{loc[0]}, {loc[1]}]",
-                            f"    Direction = {dirn}",
-                            "}"
-                        ]
+                        block = [f"{name} : {base}", "{"]
+                        if needs_loc:
+                            block.append(f"    Location = [{loc[0]}, {loc[1]}]")
+                        if needs_dir:
+                            block.append(f"    Direction = {dirn}")
+                        block.append("}")
                         lines += block
                         lines.append("")
                         prev_enabled_name = name
+                        last_enabled_for_loc[loc_tuple] = (name, dirn, True)
+                        last_enabled_for_dir[dirn] = (name, loc_tuple, True)
                     else:
-                        # Comment out disabled port, show what it would inherit from (find last enabled above)
-                        if prev_enabled_name is None:
-                            base = "~/Part/^/0/BASE_THERMAL_PORT"
-                        else:
-                            base = prev_enabled_name
-                        block = [
-                            f"// {name} : {base}",
-                            "// {",
-                            f"//     Location = [{loc[0]}, {loc[1]}]",
-                            f"//     Direction = {dirn}",
-                            "// }"
-                        ]
+                        block = [f"// {name} : {base}", "// {"]
+                        if needs_loc:
+                            block.append(f"//     Location = [{loc[0]}, {loc[1]}]")
+                        if needs_dir:
+                            block.append(f"//     Direction = {dirn}")
+                        block.append("// }")
                         lines += block
                         lines.append("")
+                        last_enabled_for_loc[loc_tuple] = (name, dirn, False)
+                        last_enabled_for_dir[dirn] = (name, loc_tuple, False)
             else:
                 # All ports disabled—comment all as inheriting from BASE_THERMAL_PORT
                 for idx, (name, loc, dirn, enabled) in enumerate(ports):
@@ -1143,39 +1163,61 @@ class MainWindow(QMainWindow):
             lines.append("// --- Thermal Ports ---\n")
             enabled_indices = [i for i, (_, _, _, en) in enumerate(ports) if en]
             if enabled_indices:
-                first_enabled = enabled_indices[0]
                 prev_enabled_name = None
+                last_enabled_for_loc = {}  # (x, y) -> (name, dirn, enabled)
+                last_enabled_for_dir = {}  # dirn -> (name, loc, enabled)
                 for idx, (name, loc, dirn, enabled) in enumerate(ports):
-                    # If this is the first enabled, always use BASE_THERMAL_PORT
+                    loc_tuple = tuple(loc)
+                    # Determine inheritance base
+                    if prev_enabled_name is None:
+                        base = "~/Part/^/0/BASE_THERMAL_PORT"
+                    else:
+                        base = prev_enabled_name
+
+                    parent_for_loc = last_enabled_for_loc.get(loc_tuple, None)
+                    parent_for_dir = last_enabled_for_dir.get(dirn, None)
+
+                    # Figure out what the parent (base) port's location and direction are
+                    parent_loc = None
+                    parent_dir = None
+                    if prev_enabled_name is not None:
+                        # Find previous enabled port's loc/dir
+                        prev_idx = idx - 1
+                        while prev_idx >= 0:
+                            prev_port = ports[prev_idx]
+                            if prev_port[3]:  # enabled
+                                parent_loc = tuple(prev_port[1])
+                                parent_dir = prev_port[2]
+                                break
+                            prev_idx -= 1
+
+                    # Decide what to output
+                    needs_loc = (parent_loc != loc_tuple) if parent_loc is not None else True
+                    needs_dir = (parent_dir != dirn) if parent_dir is not None else True
+
                     if enabled:
-                        if prev_enabled_name is None:
-                            base = "~/Part/^/0/BASE_THERMAL_PORT"
-                        else:
-                            base = prev_enabled_name
-                        block = [
-                            f"{name} : {base}",
-                            "{",
-                            f"    Location = [{loc[0]}, {loc[1]}]",
-                            f"    Direction = {dirn}",
-                            "}"
-                        ]
+                        block = [f"{name} : {base}", "{"]
+                        if needs_loc:
+                            block.append(f"    Location = [{loc[0]}, {loc[1]}]")
+                        if needs_dir:
+                            block.append(f"    Direction = {dirn}")
+                        block.append("}")
                         lines += block
                         lines.append("")
                         prev_enabled_name = name
+                        last_enabled_for_loc[loc_tuple] = (name, dirn, True)
+                        last_enabled_for_dir[dirn] = (name, loc_tuple, True)
                     else:
-                        if prev_enabled_name is None:
-                            base = "~/Part/^/0/BASE_THERMAL_PORT"
-                        else:
-                            base = prev_enabled_name
-                        block = [
-                            f"// {name} : {base}",
-                            "// {",
-                            f"//     Location = [{loc[0]}, {loc[1]}]",
-                            f"//     Direction = {dirn}",
-                            "// }"
-                        ]
+                        block = [f"// {name} : {base}", "// {"]
+                        if needs_loc:
+                            block.append(f"//     Location = [{loc[0]}, {loc[1]}]")
+                        if needs_dir:
+                            block.append(f"//     Direction = {dirn}")
+                        block.append("// }")
                         lines += block
                         lines.append("")
+                        last_enabled_for_loc[loc_tuple] = (name, dirn, False)
+                        last_enabled_for_dir[dirn] = (name, loc_tuple, False)
             else:
                 # All ports disabled—comment all as inheriting from BASE_THERMAL_PORT
                 for idx, (name, loc, dirn, enabled) in enumerate(ports):
