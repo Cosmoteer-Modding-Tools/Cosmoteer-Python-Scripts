@@ -1,3 +1,80 @@
+
+# TODO
+# Locations Mode should include a "Crew" option in the AddLocation popup dialog under "Type" menu, it should default the image of a crew member for easier placement (default_images/crew.png).  For convenince it should ensure the size is 1x1 and image orientation iss the same default as adding images manually. When selected it should be at 100% opacity and toggleable in the layer menu (all same features of adding points and images - basically a combination of both allowing the direction arrow to overlay so the user can be precise in its rotation - also adjustable and applyed in properties when highlighted in teh layer menu like the other features.).
+# When outputting Thermal Port code, physical location values don't need to be specified if they are inheriting from a node sharing the same location. This will need to be careful not to break when you toggle off the the inherited value for any reason, it should work similar to the Base Inherit and show up on one of the remaining nodes that previously shared the location.  E.g., Port A and B and C have same location = [0,0], Port C inherits B and B inherits A but each has its own distinct directional value (up left and right).  Port C and B don't need to have a location unless Port A is disabled, if Port A is disabled, then Port B should have its location uncommented, so C can inherit from it (or vice versa).  I think for an easier implementation we should just comment and uncomment out values rather than removing them.  That way we don't have to worry about losing or regenerating code.  
+# Allowed Door locations and Travel Cells code blocks should use the following format - There is a bug currently where the default code block is not being commented out like it should be.  If Neutral (not green or red) the AllowedDoorLocations should be commented out.  If a door is dissallowed (red) and all other perimeter blocks are neutral then the block should be uncommented, and all items in the code block should be uncommented except for the Door(s) that the user wants blocked.  If both green and red (blocked and allowed) doors are toggled, all existing neutral are assumed blocked and commented out.  If a door is allowed (green) and all other doors are neutral, then neutral doors should be assumed blocked (red) should be commented out in the code block.  For simplicity we should output all doors of all perimeter cells by default but comment out the entire Allowed Doors block until the user toggles a perimeter tile red or green.  As a user I should see the verbose code in the Info Panel with the items commented out "//" and have the option to Copy and/or Save the shorter version by ensuring the Include Comments toggle is unchecked.
+# Example A: after output w/include comments is unchecked
+# Requirements Recap
+# All neutral: (Neutral assumed green) Entire AllowedDoorLocations block should be commented out therefore ommiting existence of blocked doors.
+# Any red (blocked) and all others neutral: Block is uncommented, all neutral items are assumed "green" and uncommented except the blocked (red) ones (which are commented).
+# Both green (allowed) and red (blocked): All neutral are assumed blocked and commented out.
+# Any green (allowed) and all others neutral: Neutral doors are assumed blocked (commented out), only allowed doors are uncommented.
+# Default: Output all doors, but comment out the block until a perimeter tile is toggled.
+# AllowedDoorLocations
+#	[
+#		[0, -1]
+#		[-1, 0]
+#	]
+# Example B: 2x3 part - after output w/include comments is checked
+#	AllowedDoorLocations
+#	[
+#		[-1, 2]
+#		[0, 3]
+#		[1, 3]
+#		[2, 2]
+#	]
+#	BlockedTravelCells
+#	[
+#		[0, 0]
+#		[1, 0]
+#	]
+# Example of Code Block from "Blocked Travel Directions" Mode for 2,3 part. (have not implemented this yet) - This should be a Mode Type similar to Doors & Paths, Mutually exclusive as it would need to occupy the same UI space.  Features should include ability to click left right top bottom values within each 64x64 tile internal to part.  Maybe arrows in each direction of the 64x64 tile.  Only Internal (not perimeter door tiles) should show this additional UI. Tiles Blocked Cells via "Doors & Paths" Should appear Grey'd out and not have the arrow UI overlayed Toggling would change the color green to red or something to indicate that direction is allowed or blocked. Default would be Green assuming all directions are enabled (nothing should be defined in the code block if all directions are enabled).  If a direction is blocked, then it should be defined in the code block.  If a direction is allowed, then it should not be defined in the code block.  For simplicity we should output all directions of all internal cells by default but commented out until the user toggles the direction to be blocked.  As a user I should see the verbose code in the Info Panel with the items commented out "//" and have the option to Copy and/or Save the shorter version by ensuring the Include Comments toggle is unchecked.
+#	BlockedTravelCellDirections
+#	[
+#		{
+#			Key = [0, 1]
+#			Value = [Right]
+#		}
+#		{
+#			Key = [1, 1]
+#			Value = [Left]
+#		}
+#	]
+# Example Code Block of Thermal Ports form a 2x2 Part with ports on all sides. Using "Thermal Ports" Mode - Notice how inherit logic is used to shorten the amount code necessary in each Directional Block.  For example., Direction is unnecessary to define in Port_Thermal_RightUp because its inheriting from Port_Thermal_TopLeft, ~/Part/^/0/BASE_THERMAL_PORT is also unnecessary to inherit because it Port_Thermal_TopLeft is already inheriting from it.  This should be the same for all ports, so that we can easily add or remove ports without having to worry about the code being too long or too short. As a user I should see the verbose code in the Info Panel with the items commented out "//" and have the option to Copy and/or Save the shorter version by ensuring the Include Comments toggle is unchecked.
+# 		Port_Thermal_TopLeft : ~/Part/^/0/BASE_THERMAL_PORT
+# 		{
+# 			Location = [0,0]
+# 			Direction = Left
+# 		}
+# 		Port_Thermal_LeftUp : Port_Thermal_TopLeft
+# 		{
+# 			Location = [0, 0]
+# 			Direction = Up
+# 		}
+# 		Port_Thermal_RightUp : Port_Thermal_LeftUp
+# 		{
+# 			Location = [1, 0]
+# 		}
+# 		Port_Thermal_TopRight : Port_Thermal_RightUp
+# 		{
+# 			Direction = Right
+# 		}
+# 		Port_Thermal_BottomRight : Port_Thermal_TopRight
+# 		{
+# 			Location = [1,1]
+# 		}
+# 		Port_Thermal_RightDown : Port_Thermal_BottomRight
+# 		{
+# 			Direction = Down
+# 		}
+# 		Port_Thermal_LeftDown : Port_Thermal_RightDown
+# 		{
+# 			Location = [0,1]
+# 		}
+# 		Port_Thermal_BottomLeft : Port_Thermal_LeftDown
+# 		{
+# 			Direction = Left
+# 		}
 #!/usr/bin/env python3
 # EasyGridLocations_PySide6_v2.py
 # Requires Python 3.10+ and PySide6>=6.0
@@ -7,7 +84,7 @@ from fractions import Fraction
 
 from PySide6.QtCore import Qt, QPointF
 from PySide6.QtGui import (
-    QBrush, QPen, QColor, QPixmap, QFont, QPainter, QFontMetricsF
+    QBrush, QPen, QColor, QPixmap, QFont, QPainter, QFontMetricsF, QTransform
 )
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -16,7 +93,7 @@ from PySide6.QtWidgets import (
     QGraphicsLineItem, QGraphicsTextItem, QFileDialog, QComboBox,
     QDoubleSpinBox, QTreeWidget, QTreeWidgetItem, QInputDialog,
     QSlider, QMessageBox, QDialog, QFormLayout, QDialogButtonBox,
-    QSpinBox, QGroupBox
+    QSpinBox, QGroupBox, QPlainTextEdit
 )
 
 CELL_SIZE = 64
@@ -154,11 +231,17 @@ class AddLocationDialog(QDialog):
         super().accept()
 
 class GridScene(QGraphicsScene):
-    def __init__(self, W, H, parent=None):
-        super().__init__(parent)
+    def __init__(self, W, H, main_window=None):
+        super().__init__(main_window)
         self.W, self.H = W, H
+        self.main_window = main_window
         self.cell_states = {}   # (i,j)->{'type','state','rect'}
         self._draw_grid()
+        self.blocked_dirs = {}  # (i, j) -> set of blocked directions, e.g. {(1,1): {"Left", "Up"}}
+
+    def _get_blocked_cells(self):
+        # Returns dict of (x, y): state for blocked cells
+        return {k: v["state"] for k, v in self.cell_states.items() if v["type"] == "blocked"}
 
     def _draw_grid(self):
         tw, th = (self.W+2)*CELL_SIZE, (self.H+2)*CELL_SIZE
@@ -209,18 +292,78 @@ class GridScene(QGraphicsScene):
             rect.setBrush(QBrush(Qt.gray if c["state"] else Qt.white))
     def mousePressEvent(self, ev):
         super().mousePressEvent(ev)
+        if self.main_window:
+            self.main_window._refresh_info_panel()
         if hasattr(self, "click_cb"):
             self.click_cb(ev.scenePos())
+        # Blocked Travel Directions arrow click
+        if hasattr(self, "mode") and self.mode == "Blocked Travel Directions":
+            item = self.itemAt(ev.scenePos(), QTransform())
+            if isinstance(item, QGraphicsPixmapItem) and item.data(0):
+                x, y, dirn = item.data(0)
+                dirs = self.blocked_dirs.setdefault((x, y), set())
+                if dirn in dirs:
+                    dirs.remove(dirn)
+                else:
+                    dirs.add(dirn)
+                if not dirs:
+                    del self.blocked_dirs[(x, y)]
+                if self.main_window:
+                    self.main_window._refresh_info_panel()
+                self.draw_blocked_dir_arrows(self._get_blocked_cells())
+    def draw_blocked_dir_arrows(self, blocked_cells):
+        # Remove any previous arrows
+        if hasattr(self, "_arrow_items"):
+            for item in self._arrow_items:
+                self.removeItem(item)
+        self._arrow_items = []
 
+        W, H = self.W, self.H
+        arrow_defs = [
+            ("Up",    0, -1, -90),
+            ("Down",  0,  1, 90),
+            ("Left", -1,  0, 180),
+            ("Right", 1,  0, 0),
+        ]
+        for x in range(W):
+            for y in range(H):
+                if self.cell_states.get((x, y), {}).get("type") != "blocked":
+                    continue
+                if blocked_cells.get((x, y), 0) == 1:
+                    continue
+                for name, dx, dy, deg in arrow_defs:
+                    px = (x+1)*CELL_SIZE + CELL_SIZE//2
+                    py = (y+1)*CELL_SIZE + CELL_SIZE//2
+                    blocked = name in self.blocked_dirs.get((x, y), set())
+                    img_path = "default_images/red_x.png" if blocked else "default_images/arrow_green.png"
+                    pix = QPixmap(img_path).scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    item = QGraphicsPixmapItem(pix)
+                    item.setOffset(-pix.width()/2, -pix.height()/2)
+                    item.setPos(px + dx*22, py + dy*22)  # 22 is a bit further out than 18, tweak as needed
+                    item.setRotation(deg)
+                    item.setZValue(2)
+                    item.setData(0, (x, y, name))
+                    self.addItem(item)
+                    self._arrow_items.append(item)
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("EasyGridLocations v2")
+        self.setWindowTitle("EasyGridLocations v4")
         self.setFont(QFont("Consolas", 10))
         self.last_dir = str(Path.home())
         self.layers = {}   # name -> {'items':[], 'type','params'}
         self._build_ui()
         self.thermal_ports = {}
+
+    def _apply_comment_toggle(self, text: str) -> str:
+        """Strip out lines beginning with '//' if toggle is unchecked."""
+        if self.include_comments_cb.isChecked():
+            return text
+        # remove any fully‐commented lines
+        return "\n".join(
+            line for line in text.splitlines()
+            if not line.strip().startswith("//")
+        )
 
     def _build_ui(self):
         c = QWidget(); self.setCentralWidget(c)
@@ -239,40 +382,184 @@ class MainWindow(QMainWindow):
         self.size_le=QLineEdit("4,5"); sh.addWidget(self.size_le)
         b=QPushButton("Generate"); b.clicked.connect(self.on_gen); sh.addWidget(b)
         ctrl.addLayout(sh)
-        btn = QPushButton("Load Sprite"); btn.clicked.connect(self.on_sprite)
-        ctrl.addWidget(btn)
-        ctrl.addWidget(QLabel("Mode:"))
-        self.mode_cb=QComboBox(); self.mode_cb.addItems(
-            ["Toggle Cells", "Add Location", "Thermal Ports"]
-        ); ctrl.addWidget(self.mode_cb)
+        # Load Sprite button: always visible, but disabled until grid is generated
+        self.load_sprite_btn = QPushButton("Load Sprite")
+        self.load_sprite_btn.setEnabled(False)  # Disabled at start
+        self.load_sprite_btn.clicked.connect(self.on_sprite)
+        ctrl.addWidget(self.load_sprite_btn)
+        mode_hb = QHBoxLayout()
+        self.mode_label = QLabel("Mode:")
+        mode_hb.addWidget(self.mode_label)
+        self.mode_cb = QComboBox()
+        self.mode_cb.addItems([
+            "Doors & Paths",
+            "Blocked Travel Directions",  # <-- Add this
+            "Locations",
+            "Thermal Ports"
+        ])
+        mode_hb.addWidget(self.mode_cb)
+        ctrl.addLayout(mode_hb)
         self.mode_cb.currentIndexChanged.connect(self._mode_changed)
-        ctrl.addWidget(QLabel("Global coord mode:"))
-        self.global_coord_cb=QComboBox()
-        self.global_coord_cb.addItems(["Direct","Offset"])
+        self.mode_cb.setEnabled(False)
+        self.global_coord_label = QLabel("Global coord mode:")
+        self.global_coord_cb = QComboBox()
+        self.global_coord_cb.addItems(["Direct", "Offset"])
+        ctrl.addWidget(self.global_coord_label)
         ctrl.addWidget(self.global_coord_cb)
-        ctrl.addWidget(QLabel("Layers & Points:"))
-        self.tree=QTreeWidget(); self.tree.setHeaderHidden(True)
+        self.global_coord_label.hide()
+        self.global_coord_cb.hide()
+        # ---- Start: Code Viewer ----
+        self.code_viewer_label = QLabel("Code Viewer")
+        self.code_viewer_label.setStyleSheet("font-weight: bold;")
+        ctrl.addWidget(self.code_viewer_label)
+        self.info_panel = QPlainTextEdit()
+        self.info_panel.setReadOnly(True)
+        ctrl.addWidget(self.info_panel)
+        # ---- End: Code Viewer ----
+
+        # --- Layers & Points section ---
+        self.layers_label = QLabel("Layers & Points:")
+        ctrl.addWidget(self.layers_label)
+        self.layers_label.hide()  # Start hidden
+
+        self.tree = QTreeWidget(); self.tree.setHeaderHidden(True)
         self.tree.itemSelectionChanged.connect(self._on_tree_sel)
-        ctrl.addWidget(self.tree,1)
-        ctrl.addWidget(QLabel("Properties:"))
-        self.props_box=QGroupBox(); self.props_layout=QFormLayout()
+        ctrl.addWidget(self.tree, 1)
+        self.tree.hide()  # Start hidden
+
+        self.props_label = QLabel("Properties:")
+        ctrl.addWidget(self.props_label)
+        self.props_label.hide()  # Start hidden
+
+        self.props_box = QGroupBox(); self.props_layout = QFormLayout()
         self.props_box.setLayout(self.props_layout)
         ctrl.addWidget(self.props_box)
-        self.props_box.hide()
-        cb=QPushButton("Copy"); cb.clicked.connect(self.on_copy)
-        sv=QPushButton("Save"); sv.clicked.connect(self.on_save)
-        ctrl.addWidget(cb); ctrl.addWidget(sv)
+        self.props_box.hide()  # Already hiding
+
+        # --- Copy Code Block button: move here, after tree, before Copy/Save ---
+        self.copy_block_btn = QPushButton("Copy Code Block")
+        self.copy_block_btn.clicked.connect(self._context_copy)
+        ctrl.addWidget(self.copy_block_btn)
+        self.copy_block_btn.hide()  # Hide at startup, control visibility in _mode_changed
+
+        # — Copy / Save / Include‑Comments toggle —
+        cb = QPushButton("Copy")
+        cb.clicked.connect(self.on_copy)
+        ctrl.addWidget(cb)
+
+        sv = QPushButton("Save")
+        sv.clicked.connect(self.on_save)
+        ctrl.addWidget(sv)
+
+        # Toggle whether to include commented‐out lines in any copy/save
+        from PySide6.QtWidgets import QCheckBox
+        self.include_comments_cb = QCheckBox("Include comments")
+        self.include_comments_cb.setChecked(True)
+        ctrl.addWidget(self.include_comments_cb)
+
         self.statusBar().showMessage("Ready")
+        self._mode_changed()
 
     def _mode_changed(self):
+        if self.scene is None:
+            # Grid not yet created, do nothing
+            return
         mode = self.mode_cb.currentText()
+
+        # Hide global coord mode always
+        self.global_coord_label.hide()
+        self.global_coord_cb.hide()
+
+        if mode == "Locations":
+            self.code_viewer_label.hide()
+            self.info_panel.hide()
+            self.copy_block_btn.show()
+            self.layers_label.show()
+            self.tree.show()
+            self.props_label.show()
+            self.props_box.show()
+        else:  # Doors & Paths or Thermal Ports
+            self.code_viewer_label.show()
+            self.info_panel.show()
+            self.copy_block_btn.show()
+            self.layers_label.hide()
+            self.tree.hide()
+            self.props_label.hide()
+            self.props_box.hide()
+            self._refresh_info_panel()
+        if mode == "Blocked Travel Directions":
+            self.scene.mode = "Blocked Travel Directions"
+            self.scene.draw_blocked_dir_arrows(self.scene._get_blocked_cells())
+        else:
+            if hasattr(self.scene, "_arrow_items"):
+                for item in self.scene._arrow_items:
+                    self.scene.removeItem(item)
+                self.scene._arrow_items = []
+    
+        self.copy_block_btn.show()  # Always show
+
+        # Visual logic for port items
         if mode == "Thermal Ports":
             self._draw_thermal_ports()
+            self._refresh_info_panel()
         else:
             if hasattr(self, "_port_items"):
                 for item in self._port_items:
                     self.scene.removeItem(item)
                 self._port_items = []
+
+    def _gen_blocked_travel_dirs_code(self):
+        if not self.scene:
+            return ""
+        W, H = self.scene.W, self.scene.H
+        blocked_dirs = getattr(self.scene, "blocked_dirs", {})
+        entries = []
+        for (i, j), dirs in blocked_dirs.items():
+            if dirs:
+                entries.append((i, j, sorted(dirs)))
+        if not entries:
+            out = ["// BlockedTravelCellDirections", "// ["]
+            for y in range(H):
+                for x in range(W):
+                    for d in ["Up", "Down", "Left", "Right"]:
+                        out.append(f"//    {{")
+                        out.append(f"//        Key = [{x}, {y}]")
+                        out.append(f"//        Value = [{d}]")
+                        out.append(f"//    }}")
+            out.append("// ]")
+            return "\n".join(out)
+        else:
+            out = ["BlockedTravelCellDirections", "["]
+            for (i, j, dirs) in entries:
+                out.append(f"    {{")
+                out.append(f"        Key = [{i}, {j}]")
+                out.append(f"        Value = [{', '.join(dirs)}]")
+                out.append(f"    }}")
+            out.append("]")
+            return "\n".join(out)
+
+    def _context_copy(self):
+        mode = self.mode_cb.currentText()
+        if mode == "Locations":
+            # Generate code for all layers (like in _gen_rules, but only the layers part)
+            lines = []
+            for name, L in self.layers.items():
+                if name == "__sprite__":
+                    continue
+                p = L["params"]
+                lines.append(f"{name} = {{")
+                if L["type"] == "image":
+                    lines.append(f'  File = "{p["file"]}"')
+                    lines.append(f"  Size = [{p['size'][0]}, {p['size'][1]}]")
+                lines.append(f"  Location = [{p['location'][0]}, {p['location'][1]}]")
+                lines.append(f"  Rotation = {p['rotation']}")
+                lines.append("}\n")
+            txt = "\n".join(lines)
+        else:
+            raw = self.info_panel.toPlainText()
+            txt = self._apply_comment_toggle(raw)
+        QApplication.clipboard().setText(txt)
+        self.statusBar().showMessage("Copied code block")
 
     def _draw_thermal_ports(self):
         if hasattr(self, "_port_items"):
@@ -341,10 +628,16 @@ class MainWindow(QMainWindow):
             self.thermal_ports[(w,j)] = False
         self._port_items = []
         self.scene=GridScene(w,h)
+        self.scene = GridScene(w, h, main_window=self)
+        self.scene.mode = self.mode_cb.currentText()
         self.scene.click_cb=self._on_click
         self.view.setScene(self.scene)
         self.view.resetTransform(); self.view.translate(-CELL_SIZE,-CELL_SIZE)
+        self.load_sprite_btn.setEnabled(True)
+        self.mode_cb.setEnabled(True)
         self.statusBar().showMessage(f"Grid {w}×{h}")
+        self._mode_changed()    # <<<<<< Add this, removes the need to call _refresh_info_panel() here
+        # self._refresh_info_panel()
 
     def on_sprite(self):
         if not self.scene: return
@@ -399,9 +692,9 @@ class MainWindow(QMainWindow):
 
     def _on_click(self, pos):
         mode = self.mode_cb.currentText()
-        if mode == "Toggle Cells":
+        if mode == "Doors & Paths":
             self.scene.toggle_cell(pos)
-        elif mode == "Add Location":
+        elif mode == "Locations":
             dlg=AddLocationDialog(self,pos,self.layers,self.scene.W,self.scene.H)
             if dlg.exec()!=QDialog.Accepted: return
             self._add_location(dlg.result)
@@ -419,6 +712,8 @@ class MainWindow(QMainWindow):
             enabled = self.thermal_ports.get(key, False)
             self.thermal_ports[key] = not enabled
             self._draw_thermal_ports()
+        # === Always refresh the info panel after a click ===
+        self._refresh_info_panel()
 
     def _add_location(self,opts):
         x,y=opts["x"],opts["y"]
@@ -461,7 +756,8 @@ class MainWindow(QMainWindow):
         node.setCheckState(0,Qt.Checked)
         self.tree.setCurrentItem(node)
         self.statusBar().showMessage(f"Added {name}")
-
+        self._refresh_info_panel()
+    
     def _on_tree_sel(self):
         items = self.tree.selectedItems()
         while self.props_layout.count():
@@ -521,6 +817,7 @@ class MainWindow(QMainWindow):
             self.scene.addItem(new_arr)
             items[1]=new_arr
         self.statusBar().showMessage(f"Updated {key}")
+        self._refresh_info_panel()
 
     def _remove_layer(self,key):
         for item in self.layers[key]["items"]:
@@ -532,23 +829,38 @@ class MainWindow(QMainWindow):
             parent.removeChild(it)
         self.props_box.hide()
         self.statusBar().showMessage(f"Removed {key}")
+        self._refresh_info_panel()
 
     def on_copy(self):
-        txt=self._gen_rules(); QApplication.clipboard().setText(txt)
+        raw = self._gen_rules()
+        txt = self._apply_comment_toggle(raw)
+        QApplication.clipboard().setText(txt)
         self.statusBar().showMessage("Copied")
 
     def on_save(self):
-        txt=self._gen_rules()
-        path,_=QFileDialog.getSaveFileName(
-            self,"Save .rules",self.last_dir,"Rules (*.rules)"
+        raw = self._gen_rules()
+        txt = self._apply_comment_toggle(raw)
+        path,_ = QFileDialog.getSaveFileName(
+            self, "Save .rules", self.last_dir, "Rules (*.rules)"
         )
-        if not path: return
-        if not path.endswith(".rules"): path+=".rules"
-        with open(path,"w",encoding="utf-8") as f: f.write(txt)
-        self.last_dir=os.path.dirname(path)
+        if not path:
+            return
+        if not path.endswith(".rules"):
+            path += ".rules"
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(txt)
+        self.last_dir = os.path.dirname(path)
         self.statusBar().showMessage(f"Saved {path}")
 
     def _gen_rules(self):
+        mode = self.mode_cb.currentText() if hasattr(self, "mode_cb") else "Doors & Paths"
+        if mode == "Doors & Paths":
+            return self._gen_doors_paths_code()
+        elif mode == "Thermal Ports":
+            return self._gen_thermal_ports_code()
+        elif mode == "Blocked Travel Directions":
+            return self._gen_blocked_travel_dirs_code()
+        # Otherwise, fall back to the original output for Locations
         W,H = self.scene.W, self.scene.H
         lines=[f"size = [{W}, {H}]\n"]
         ald=[]; bld=[]
@@ -705,6 +1017,241 @@ class MainWindow(QMainWindow):
             lines.append(f"  Rotation = {p['rotation']}")
             lines.append("}\n")
         return "\n".join(lines)
+
+    # === Code Viewer Updater ===
+    def _refresh_info_panel(self):
+        if not self.scene:
+            self.info_panel.clear()
+            return
+        mode = self.mode_cb.currentText()
+        if mode == "Doors & Paths":
+            code = self._gen_doors_paths_code()
+            self.info_panel.setPlainText(code)
+        elif mode == "Blocked Travel Directions":
+            self.scene.draw_blocked_dir_arrows(self.scene._get_blocked_cells())
+            code = self._gen_blocked_travel_dirs_code()
+            self.info_panel.setPlainText(code)
+        elif mode == "Thermal Ports":
+            code = self._gen_thermal_ports_code()
+            self.info_panel.setPlainText(code)
+        else:
+            self.info_panel.clear()
+
+    # === Doors & Paths Code Generator ===
+    def _gen_doors_paths_code(self):
+        if not self.scene:
+            return ""
+        W, H = self.scene.W, self.scene.H
+        doors = []
+        for x in range(W):
+            doors.append((x, -1))
+            doors.append((x, H))
+        for y in range(H):
+            doors.append((-1, y))
+            doors.append((W, y))
+        cell_states = getattr(self.scene, 'cell_states', {})
+
+        # Gather states
+        has_green = False
+        has_red = False
+        for (i, j) in doors:
+            state = cell_states.get((i, j), {})
+            if state.get("type") == "door":
+                if state.get("state", 0) == 1:
+                    has_green = True
+                elif state.get("state", 0) == 2:
+                    has_red = True
+
+        all_neutral = not (has_green or has_red)
+
+        out = []
+        if all_neutral:
+            # All neutral: comment out the whole block
+            out.append("// AllowedDoorLocations")
+            out.append("// [")
+            for (i, j) in doors:
+                out.append(f"//\t[{i}, {j}]")
+            out.append("// ]\n")
+        else:
+            out.append("AllowedDoorLocations")
+            out.append("[")
+            for (i, j) in doors:
+                state = cell_states.get((i, j), {})
+                if state.get("type") == "door":
+                    s = state.get("state", 0)
+                    if has_green and has_red:
+                        # Both green and red: neutral are assumed blocked (commented), green uncommented, red commented
+                        if s == 1:
+                            out.append(f"\t[{i}, {j}]")
+                        elif s == 2 or s == 0:
+                            out.append(f"\t// [{i}, {j}]")
+                    elif has_green and not has_red:
+                        # Only green: green uncommented, neutral commented
+                        if s == 1:
+                            out.append(f"\t[{i}, {j}]")
+                        else:
+                            out.append(f"\t// [{i}, {j}]")
+                    elif has_red and not has_green:
+                        # Only red: red commented, neutral uncommented
+                        if s == 2:
+                            out.append(f"\t// [{i}, {j}]")
+                        else:
+                            out.append(f"\t[{i}, {j}]")
+                else:
+                    out.append(f"\t// [{i}, {j}]")
+            out.append("]\n")
+
+        # BlockedTravelCells: only care about "blocked" type
+        blocked = []
+        for y in range(H):
+            for x in range(W):
+                blocked.append((x, y))
+
+        block_lines = []
+        any_blocked = False
+        for (i, j) in blocked:
+            state = cell_states.get((i, j), {})
+            if state.get("type") == "blocked":
+                if state.get("state", 0) == 1:
+                    block_lines.append(f"\t[{i}, {j}]")
+                    any_blocked = True
+                else:
+                    block_lines.append(f"\t// [{i}, {j}]")
+            else:
+                block_lines.append(f"\t// [{i}, {j}]")
+
+        block_block_commented = not any(line.lstrip().startswith("[") for line in block_lines)
+        if block_block_commented:
+            out += ["// BlockedTravelCells", "// ["]
+            out += [f"//{line}" for line in block_lines]
+            out.append("// ]")
+        else:
+            out += ["BlockedTravelCells", "["]
+            out += block_lines
+            out.append("]")
+
+        return "\n".join(out)
+
+    # === Thermal Ports Code Generator ===
+    def _gen_thermal_ports_code(self):
+        W, H = self.scene.W, self.scene.H
+        lines = []
+
+        # --- Thermal Ports (all possible, vanilla order, commented out if disabled) ---
+        def vanilla_ports_all(W, H, port_status):
+            ports = []
+            # 1x1
+            if W == 1 and H == 1:
+                for dirn in ["Up", "Right", "Down", "Left"]:
+                    enabled = port_status.get((0,0,dirn), False)
+                    name = f"Port_Thermal_{dirn}"
+                    ports.append((name, [0,0], dirn, enabled))
+                return ports
+            # 2x2
+            elif W == 2 and H == 2:
+                order = [
+                    ("Port_Thermal_TopLeft",    [0,0], "Left"),
+                    ("Port_Thermal_LeftUp",     [0,0], "Up"),
+                    ("Port_Thermal_RightUp",    [1,0], "Up"),
+                    ("Port_Thermal_TopRight",   [1,0], "Right"),
+                    ("Port_Thermal_BottomRight",[1,1], "Right"),
+                    ("Port_Thermal_RightDown",  [1,1], "Down"),
+                    ("Port_Thermal_LeftDown",   [0,1], "Down"),
+                    ("Port_Thermal_BottomLeft", [0,1], "Left"),
+                ]
+                for name, loc, dirn in order:
+                    enabled = port_status.get(tuple(loc)+(dirn,), False)
+                    ports.append((name, loc, dirn, enabled))
+                return ports
+            else:
+                idxs = {"Left":0, "Down":0, "Right":0, "Up":0}
+                # Left
+                for y in range(H):
+                    n = "Port_Thermal_Left%d" % idxs["Left"]
+                    idxs["Left"] += 1
+                    enabled = port_status.get((0,y,"Left"), False)
+                    ports.append((n, [0,y], "Left", enabled))
+                # Bottom
+                for x in range(1, W):
+                    n = "Port_Thermal_Down%d" % idxs["Down"]
+                    idxs["Down"] += 1
+                    enabled = port_status.get((x,H-1,"Down"), False)
+                    ports.append((n, [x,H-1], "Down", enabled))
+                # Right
+                for y in range(H-2, -1, -1):
+                    n = "Port_Thermal_Right%d" % idxs["Right"]
+                    idxs["Right"] += 1
+                    enabled = port_status.get((W-1,y,"Right"), False)
+                    ports.append((n, [W-1,y], "Right", enabled))
+                # Top
+                for x in range(W-2, 0, -1):
+                    n = "Port_Thermal_Up%d" % idxs["Up"]
+                    idxs["Up"] += 1
+                    enabled = port_status.get((x,0,"Up"), False)
+                    ports.append((n, [x,0], "Up", enabled))
+                return ports
+
+        port_status = {}
+        for i in range(W):
+            port_status[(i,0,"Up")] = self.thermal_ports.get((i,-1), False)
+            port_status[(i,H-1,"Down")] = self.thermal_ports.get((i,H), False)
+        for j in range(H):
+            port_status[(0,j,"Left")] = self.thermal_ports.get((-1,j), False)
+            port_status[(W-1,j,"Right")] = self.thermal_ports.get((W,j), False)
+        ports = vanilla_ports_all(W, H, port_status)
+        # Output all ports in order, commented out if disabled
+        if ports:
+            lines.append("// --- Thermal Ports ---\n")
+            enabled_indices = [i for i, (_, _, _, en) in enumerate(ports) if en]
+            if enabled_indices:
+                first_enabled = enabled_indices[0]
+                prev_enabled_name = None
+                for idx, (name, loc, dirn, enabled) in enumerate(ports):
+                    # If this is the first enabled, always use BASE_THERMAL_PORT
+                    if enabled:
+                        if prev_enabled_name is None:
+                            base = "~/Part/^/0/BASE_THERMAL_PORT"
+                        else:
+                            base = prev_enabled_name
+                        block = [
+                            f"{name} : {base}",
+                            "{",
+                            f"    Location = [{loc[0]}, {loc[1]}]",
+                            f"    Direction = {dirn}",
+                            "}"
+                        ]
+                        lines += block
+                        lines.append("")
+                        prev_enabled_name = name
+                    else:
+                        if prev_enabled_name is None:
+                            base = "~/Part/^/0/BASE_THERMAL_PORT"
+                        else:
+                            base = prev_enabled_name
+                        block = [
+                            f"// {name} : {base}",
+                            "// {",
+                            f"//     Location = [{loc[0]}, {loc[1]}]",
+                            f"//     Direction = {dirn}",
+                            "// }"
+                        ]
+                        lines += block
+                        lines.append("")
+            else:
+                # All ports disabled—comment all as inheriting from BASE_THERMAL_PORT
+                for idx, (name, loc, dirn, enabled) in enumerate(ports):
+                    block = [
+                        f"// {name} : ~/Part/^/0/BASE_THERMAL_PORT",
+                        "// {",
+                        f"//     Location = [{loc[0]}, {loc[1]}]",
+                        f"//     Direction = {dirn}",
+                        "// }"
+                    ]
+                    lines += block
+                    lines.append("")
+
+        return "\n".join(lines)
+
 
 if __name__=="__main__":
     app=QApplication(sys.argv)
