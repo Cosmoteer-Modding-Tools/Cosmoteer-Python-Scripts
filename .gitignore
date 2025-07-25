@@ -16,3 +16,5 @@ EasyGridLocations/test.rules
 EasyGridLocations/backup/*
 EasyGridLocations/__pycache__/EasyGridLocationBackup.cpython-311.pyc
 .gitignore
+EasyGridLocations/EasyGridLocations_Assets.zip
+EasyGridLocations/screenshots/*/
