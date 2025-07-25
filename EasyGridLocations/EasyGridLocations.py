@@ -99,7 +99,7 @@ class AddLocationDialog(QDialog):
 
         # Type
         self.type_cb = QComboBox()
-        self.type_cb.addItems(["Point Marker", "Image Overlay"])
+        self.type_cb.addItems(["Point Marker", "Image Overlay", "Crew"])
         form.addRow("Type:", self.type_cb)
 
         # Name
@@ -118,8 +118,8 @@ class AddLocationDialog(QDialog):
         # Size (image only)
         self.w_sb = QSpinBox(); self.w_sb.setRange(1, self.W)
         self.h_sb = QSpinBox(); self.h_sb.setRange(1, self.H)
-        form.addRow("Width (cells):", self.w_sb)
-        form.addRow("Height (cells):", self.h_sb)
+        form.addRow("Width (cells):", self.w_sb)
+        form.addRow("Height (cells):", self.h_sb)
 
         # Coord mode
         self.coord_cb = QComboBox()
@@ -166,11 +166,23 @@ class AddLocationDialog(QDialog):
             self.file_le.setText(f)
 
     def _update_visibility(self):
-        is_img = (self.type_cb.currentText() == "Image Overlay")
+        typ = self.type_cb.currentText()
+        is_img = (typ == "Image Overlay")
+        is_crew = (typ == "Crew")
         is_rel = (self.coord_cb.currentText() == "Relative")
+
         for w in (self.file_le, self.w_sb, self.h_sb):
-            w.setVisible(is_img)
-        self.file_le.parentWidget().setVisible(is_img)
+            w.setVisible(is_img or is_crew)
+
+        if is_crew:
+            self.file_le.setText("default_images/crew.png")
+            self.file_le.setEnabled(False)
+            self.w_sb.setValue(1)
+            self.w_sb.setEnabled(False)
+            self.h_sb.setValue(1)
+            self.h_sb.setEnabled(False)
+
+        self.file_le.parentWidget().setVisible(is_img or is_crew)
         self.base_cb.setVisible(is_rel)
 
     def accept(self):
@@ -178,12 +190,15 @@ class AddLocationDialog(QDialog):
         if not name:
             QMessageBox.warning(self, "Name required", "Please enter a name.")
             return
-        typ = "image" if self.type_cb.currentText().startswith("Image") else "point"
-        coord_mode = "rel" if self.coord_cb.currentText()=="Relative" else "abs"
-        base = (
-            self.base_cb.currentText()
-            if coord_mode=="rel" else None
-        )
+        typ_sel = self.type_cb.currentText()
+        if typ_sel == "Image Overlay":
+            typ = "image"
+        elif typ_sel == "Crew":
+            typ = "crew"
+        else:
+            typ = "point"
+        coord_mode = "rel" if self.coord_cb.currentText() == "Relative" else "abs"
+        base = self.base_cb.currentText() if coord_mode == "rel" else None
         x = parse_coord(self.x_le.text())
         y = parse_coord(self.y_le.text())
         rot = self.rot_sb.value()
@@ -195,15 +210,19 @@ class AddLocationDialog(QDialog):
             "x": x, "y": y,
             "rotation": rot
         }
-        if typ=="image":
+        if typ == "image":
             file = self.file_le.text().strip()
             if not os.path.isfile(file):
                 QMessageBox.warning(self, "File missing", "Select a valid image file.")
                 return
             res["file"] = file
             res["w"], res["h"] = self.w_sb.value(), self.h_sb.value()
+        elif typ == "crew":
+            res["file"] = "default_images/crew.png"
+            res["w"], res["h"] = 1, 1
         self.result = res
         super().accept()
+
 
 class GridScene(QGraphicsScene):
     def __init__(self, W, H, main_window=None):
@@ -679,45 +698,64 @@ class MainWindow(QMainWindow):
         # === Always refresh the info panel after a click ===
         self._refresh_info_panel()
 
-    def _add_location(self,opts):
-        x,y=opts["x"],opts["y"]
-        if opts["coord_mode"]=="rel":
-            base=opts["base"]
-            bx,by=self.layers[base]["params"]["location"]
-            x,y = bx+x, by+y
-        px,py=(x+1)*CELL_SIZE,(y+1)*CELL_SIZE
-        rot=opts["rotation"]
-        name=opts["name"]
-        if opts["type"]=="point":
-            dot=QGraphicsEllipseItem(px-5,py-5,10,10)
+    def _add_location(self, opts):
+        x, y = opts["x"], opts["y"]
+        if opts["coord_mode"] == "rel":
+            base = opts["base"]
+            bx, by = self.layers[base]["params"]["location"]
+            x, y = bx + x, by + y
+        px, py = (x + 1) * CELL_SIZE, (y + 1) * CELL_SIZE
+        rot = opts["rotation"]
+        name = opts["name"]
+
+        if opts["type"] == "point":
+            dot = QGraphicsEllipseItem(px - 5, py - 5, 10, 10)
             dot.setBrush(QBrush(Qt.red)); dot.setZValue(0.9)
-            dot.setTransformOriginPoint(px,py)
+            dot.setTransformOriginPoint(px, py)
             dot.setRotation(rot)
-            arr = self._make_arrow(px,py,rot)
+            arr = self._make_arrow(px, py, rot)
             self.scene.addItem(dot); self.scene.addItem(arr)
-            self.layers[name]={
-                "items":[dot,arr],"type":"point",
-                "params":{"location":(x,y),"rotation":rot}
+            self.layers[name] = {
+                "items": [dot, arr], "type": "point",
+                "params": {"location": (x, y), "rotation": rot}
             }
-        else:
-            f=opts["file"]; w,h=opts["w"],opts["h"]
+        elif opts["type"] == "crew":
+            f = os.path.join(os.path.dirname(__file__), "default_images", "crew.png")
+            w, h = 1, 1
             pix = QPixmap(f).scaled(
-                w*CELL_SIZE, h*CELL_SIZE,
+                w * CELL_SIZE, h * CELL_SIZE,
                 Qt.IgnoreAspectRatio, Qt.SmoothTransformation
             )
-            img=QGraphicsPixmapItem(pix); img.setOpacity(0.7); img.setZValue(0.5)
-            img.setTransformOriginPoint(pix.width()/2,pix.height()/2)
+            img = QGraphicsPixmapItem(pix); img.setOpacity(0.7); img.setZValue(0.5)
+            img.setTransformOriginPoint(pix.width() / 2, pix.height() / 2)
             img.setRotation(rot)
-            img.setPos(px - pix.width()/2, py - pix.height()/2)
-            arr = self._make_arrow(px,py,rot)
+            img.setPos(px - pix.width() / 2, py - pix.height() / 2)
+            arr = self._make_arrow(px, py, rot)
             self.scene.addItem(img); self.scene.addItem(arr)
-            self.layers[name]={
-                "items":[img,arr],"type":"image",
-                "params":{"file":f,"size":(w,h),"location":(x,y),"rotation":rot}
+            self.layers[name] = {
+                "items": [img, arr], "type": "crew",
+                "params": {"file": f, "size": (w, h), "location": (x, y), "rotation": rot}
             }
-        node=QTreeWidgetItem(self.tree,[name])
-        node.setData(0,Qt.UserRole,name)
-        node.setCheckState(0,Qt.Checked)
+        else:
+            f = opts["file"]; w, h = opts["w"], opts["h"]
+            pix = QPixmap(f).scaled(
+                w * CELL_SIZE, h * CELL_SIZE,
+                Qt.IgnoreAspectRatio, Qt.SmoothTransformation
+            )
+            img = QGraphicsPixmapItem(pix); img.setOpacity(0.7); img.setZValue(0.5)
+            img.setTransformOriginPoint(pix.width() / 2, pix.height() / 2)
+            img.setRotation(rot)
+            img.setPos(px - pix.width() / 2, py - pix.height() / 2)
+            arr = self._make_arrow(px, py, rot)
+            self.scene.addItem(img); self.scene.addItem(arr)
+            self.layers[name] = {
+                "items": [img, arr], "type": "image",
+                "params": {"file": f, "size": (w, h), "location": (x, y), "rotation": rot}
+            }
+
+        node = QTreeWidgetItem(self.tree, [name])
+        node.setData(0, Qt.UserRole, name)
+        node.setCheckState(0, Qt.Checked)
         self.tree.setCurrentItem(node)
         self.statusBar().showMessage(f"Added {name}")
         self._refresh_info_panel()
@@ -968,8 +1006,15 @@ class MainWindow(QMainWindow):
             if L["type"] == "image":
                 lines.append(f'    File = "{p["file"]}"')
                 lines.append(f"    Size = [{p['size'][0]}, {p['size'][1]}]")
-            lines.append(f"    Location = [{p['location'][0]}, {p['location'][1]}]")
-            lines.append(f"    Rotation = {p['rotation']}")
+                lines.append(f"    Location = [{p['location'][0]}, {p['location'][1]}]")
+                lines.append(f"    Rotation = {p['rotation']}")
+            elif L["type"] == "crew":
+                lines.append('    Type = CrewLocation')
+                lines.append(f"    Location = [{p['location'][0]}, {p['location'][1]}]")
+                lines.append(f"    Rotation = {p['rotation']}d")
+            elif L["type"] == "point":
+                lines.append(f"    Location = [{p['location'][0]}, {p['location'][1]}]")
+                lines.append(f"    Rotation = {p['rotation']}")
             lines.append("}")
             lines.append("")
         return "\n".join(lines)
