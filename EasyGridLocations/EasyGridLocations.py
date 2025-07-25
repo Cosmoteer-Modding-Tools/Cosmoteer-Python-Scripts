@@ -36,6 +36,13 @@ def parse_coord(s: str) -> float:
     except Exception:
         return 0.0
 
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller .exe """
+    import sys, os
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
 # --- Thermal Ports (all possible, vanilla order, commented out if disabled) ---
 def vanilla_ports_all(W, H, port_status):
     ports = []
@@ -175,7 +182,7 @@ class AddLocationDialog(QDialog):
             w.setVisible(is_img or is_crew)
 
         if is_crew:
-            self.file_le.setText("default_images/crew.png")
+            self.file_le.setText(resource_path("default_images/crew.png"))
             self.file_le.setEnabled(False)
             self.w_sb.setValue(1)
             self.w_sb.setEnabled(False)
@@ -218,11 +225,10 @@ class AddLocationDialog(QDialog):
             res["file"] = file
             res["w"], res["h"] = self.w_sb.value(), self.h_sb.value()
         elif typ == "crew":
-            res["file"] = "default_images/crew.png"
+            res["file"] = resource_path("default_images/crew.png")
             res["w"], res["h"] = 1, 1
         self.result = res
         super().accept()
-
 
 class GridScene(QGraphicsScene):
     def __init__(self, W, H, main_window=None):
@@ -329,7 +335,7 @@ class GridScene(QGraphicsScene):
                     px = (x+1)*CELL_SIZE + CELL_SIZE//2
                     py = (y+1)*CELL_SIZE + CELL_SIZE//2
                     blocked = name in self.blocked_dirs.get((x, y), set())
-                    img_path = "default_images/red_x.png" if blocked else "default_images/arrow_green.png"
+                    img_path = resource_path("default_images/red_x.png") if blocked else resource_path("default_images/arrow_green.png")
                     pix = QPixmap(img_path).scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     item = QGraphicsPixmapItem(pix)
                     item.setOffset(-pix.width()/2, -pix.height()/2)
@@ -720,7 +726,7 @@ class MainWindow(QMainWindow):
                 "params": {"location": (x, y), "rotation": rot}
             }
         elif opts["type"] == "crew":
-            f = os.path.join(os.path.dirname(__file__), "default_images", "crew.png")
+            f = resource_path("default_images/crew.png")
             w, h = 1, 1
             pix = QPixmap(f).scaled(
                 w * CELL_SIZE, h * CELL_SIZE,
