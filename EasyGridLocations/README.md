@@ -1,135 +1,124 @@
-# EasyGrid Locations, A Cosmoteer Modding Tool
 
-This tool helps create and manage door locations, blocked travel cells, and other part properties for Cosmoteer modding. The tool provides a user-friendly grid-based interface that allows you to configure your parts dynamically and generate the correct configuration code.
+# EasyGridLocations: A Cosmoteer Modding Tool
 
-## Features
+**EasyGridLocations** is a graphical tool that makes complex `.rules` part editing for [Cosmoteer](https://cosmoteer.net/) fast, visual, and hopefully error-free.  
+No more hand-writing door locations, blocked cells, overlays, or ports—just click, export, and paste!
 
-- Dynamically generates grids based on part size
-- Allows easy toggling of door locations, blocked travel cells, and more
-- Outputs properly formatted code for your Cosmoteer `.rules` files
-- Copy generated code to the clipboard for easy insertion
+---
 
-### Prerequisites
+## 🟢 Recommended: Just Download the EXE!
 
-Git & Python 3.10 or later
+1. **Get the latest EasyGridLocations.exe** from [Releases](./releases).
+2. Double-click to run! No Python, additional setup, or dependencies.
+3. The tool will open instantly—just start creating your grid locations.
 
-## Quick Setup & Updates (Windows)
+*The EXE includes all required resources, images, and icons.*
 
-For quick installation and usage of the tool, follow these steps:
+---
 
-### 1. Download the Tool
+## 🛠️ Want to Build or Run From Source?
 
-1. Clone or download this repository to your local machine:
-   ```bash
-   git clone <repository-url>
-   cd <repository-folder>
-   ```
+If you’d rather generate your own EXE or run from Python source, follow the steps below:
 
-### 2. Run the Setup Script to Install or Update Dependencies
-
-1. In the folder where you downloaded the repository, double-click the **`setup.bat`** file to automatically:
-   - Set up a Python virtual environment.
-   - Install the necessary dependencies.
-
-> **Note**: If Python is not installed on your system, the script will prompt you to install Python. You can download it from the [official Python website](https://www.python.org/downloads/).
-
-### 3. Run the Tool
-
-1. Once the setup is complete, double-click the **`run.bat`** file to launch the EasyGridLocations tool.
-2. The tool's GUI will open, and you can begin using it to configure door locations and blocked travel cells for your Cosmoteer mod.
-
-### Additional Notes
-
-- **Virtual Environment**: The setup script automatically creates and manages a Python virtual environment to keep dependencies isolated.
-- **Requirements**: The tool requires Python 3.x. If you don’t have Python installed, the setup script will notify you.
-
-By following these quick setup steps, you’ll be able to get started with the tool without needing to install dependencies manually!
-
-
-## Manual Installation
-
-To set up this tool, follow the steps below:
-
-### 1. Clone the Repository
-
-First, clone the repository to your local machine:
+### 1. Clone This Repository
 
 ```bash
 git clone <repository-url>
-cd <repository-name>
-```
+cd <repository-folder>
+````
 
-### 2. Set Up a Virtual Environment
+### 2. Setup (Windows)
 
-We recommend setting up a virtual environment to keep the dependencies for this project isolated.
+* Run `setup.bat` to auto-install everything in a virtualenv.
+* Then launch `run.bat` to start the tool.
 
-#### On Windows:
+### 3. Manual Install (Mac/Linux/Python)
 
 ```bash
 python -m venv venv
-venv\Scripts\activate
-```
-
-#### On macOS/Linux:
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 3. Install Dependencies
-
-Install the required dependencies using `pip`:
-
-```bash
+venv\Scripts\activate        # or: source venv/bin/activate
 pip install -r requirements.txt
-```
-
-This will install all the necessary Python packages to run the tool.
-
-### 4. Run the Script
-
-Once everything is set up, you can run the script with the following command:
-
-```bash
 python EasyGridLocations.py
 ```
 
-This will launch the GUI tool, allowing you to configure your mod parts and generate code.
+---
 
-## Usage
+## Modes & Functionality
 
-1. **Grid Configuration**: Enter the X and Y size of your part and click **Submit Size** to generate the grid.
-   ![image](https://github.com/user-attachments/assets/552db685-c6fa-4ade-ae46-73bd7d7dcfdb)
+EasyGridLocations currently has **4 main modes**, each to help streamline Cosmoteer part creation.
 
-2. **Toggle Cells**: Click on cells in the grid to toggle door locations or blocked travel cells.
-   ![image](https://github.com/user-attachments/assets/ac937489-7cbc-48b2-885c-396044e957d3)
-   
-3. **Generate Code**: Once your grid is configured, click **Generate Code** to get the correctly formatted output.
-   ![image](https://github.com/user-attachments/assets/b9c8174d-125a-4576-a4b5-e832ebba5820)
+---
 
-4. **Copy to Clipboard**: Use the **Copy to Clipboard** button to copy the generated code for easy insertion into your `.rules` files.
-  IMPORTANT: Remember to remove the PhysRects portion as that is still WIP.  
-   ![image](https://github.com/user-attachments/assets/e7a0952f-0674-4802-aff4-bd47654d67ea)
+### 1. Doors & Paths
 
-## Requirements
+**Set allowed door locations and block internal travel cells with a click.**
+**Export:** `AllowedDoorLocations` & `BlockedTravelCells`
 
-The tool is built with Python and uses the following dependencies:
-- **Tkinter** (for the GUI)
-- **Pyperclip** (for clipboard operations)
+> ![Doors & Paths Screenshot Placeholder](screenshots/doors_paths_placeholder.png)
 
-These dependencies will be installed automatically when you run `pip install -r requirements.txt`.
+---
 
-## Additional Notes
+### 2. Blocked Travel Directions
 
-- Make sure you have Python 3.x installed. You can download the latest version from [Python's official website](https://www.python.org/downloads/).
-- Ensure you have Git installed on your system. You can download Git from [Git's official website](https://git-scm.com/downloads).
-- If you run into any issues, feel free to open an issue in this repository.
+**Visually set which sides of each cell are blocked (up, down, left, right) for precise pathing.**
+**Export:** `BlockedTravelCellDirections`
+
+> ![Blocked Directions Screenshot Placeholder](screenshots/blocked_dirs_placeholder.png)
+
+---
+
+### 3. Locations
+
+**Click to add precisely placed points, graphics, or crew locations on your part.**
+
+* *Supports fractions, rotation, relative/absolute placement, and layering.* - Visual Layering has more features coming soon.
+* **Export:** Named blocks for overlays and crew positions (with or without verbose commented out code as needed)
+
+> ![Locations Screenshot Placeholder](screenshots/locations_placeholder.png)
+
+---
+
+### 4. Thermal Ports
+
+**New for Meltdown: Enable or disable custom thermal/heat ports for your part.**
+**Export:** `Port_Thermal_*` rules blocks automatically optimized with inheritance (with or without verbose commented out code as needed)
+
+> ![Thermal Ports Screenshot Placeholder](screenshots/thermal_ports_placeholder.png)
+
+---
+
+## Usage Overview
+
+1. Set your grid/part size. And select a base image (e.g., floor.png)
+2. Choose a mode (Doors & Paths, Blocked Cell Directions, Locations, Thermal Ports).
+3. Click cells and use dialogs to set up your locations.
+4. Copy individual blocks of code (per mode selected) or copy/save all the output code for your `.rules` file.
+
+---
+
+## Requirements (for Source/Developers)
+
+* **Python 3.10+**
+* **PySide6**
+
+All dependencies auto-installed via `setup.bat` or `pip install -r requirements.txt`.
+*End-users do not need Python if using the EXE.*
+
+---
+
+## For Developers & Contributors
+
+* PRs, bug reports, and feature requests are welcome.
+* Please check and update screenshots in the `/screenshots` directory as features evolve.
+
+---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is MIT licensed—see [LICENSE](LICENSE) for details.
 
-```
+---
 
+*EasyGridLocations is not affiliated with or endorsed by Cosmoteer or Walternate Realities.
+Made for the Cosmoteer modding community <3 by Rojamahorse*
 

@@ -11,3 +11,8 @@ build_installer.bat
 *.spec
 dist/
 build_app.bat
+EasyGridLocations/test_examples
+EasyGridLocations/test.rules
+EasyGridLocations/backup/*
+EasyGridLocations/__pycache__/EasyGridLocationBackup.cpython-311.pyc
+.gitignore

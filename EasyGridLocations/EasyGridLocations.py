@@ -9,7 +9,7 @@ import sys, os, math
 from pathlib import Path
 from fractions import Fraction
 
-from PySide6.QtCore import Qt, QPointF
+from PySide6.QtCore import Qt, QPointF, QThread
 from PySide6.QtGui import (
     QBrush, QPen, QColor, QPixmap, QFont, QPainter, QFontMetricsF, QTransform
 )
@@ -20,8 +20,10 @@ from PySide6.QtWidgets import (
     QGraphicsLineItem, QGraphicsTextItem, QFileDialog, QComboBox,
     QDoubleSpinBox, QTreeWidget, QTreeWidgetItem, QInputDialog,
     QSlider, QMessageBox, QDialog, QFormLayout, QDialogButtonBox,
-    QSpinBox, QGroupBox, QPlainTextEdit
+    QSpinBox, QGroupBox, QPlainTextEdit, QSplashScreen  
 )
+from PySide6.QtGui import QGuiApplication  
+
 
 CELL_SIZE = 64
 MAX_INTERIOR = 16
@@ -1113,7 +1115,25 @@ class MainWindow(QMainWindow):
         return "\n".join(lines)
 
 
-if __name__=="__main__":
-    app=QApplication(sys.argv)
-    win=MainWindow(); win.resize(1200,800); win.show()
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+
+    # Show the splash screen if the file exists
+    splash_img = resource_path("default_images/easygrid_splash.png")
+    splash = None
+    if os.path.exists(splash_img):
+        splash_pix = QPixmap(splash_img)
+        splash = QSplashScreen(splash_pix)
+        splash.show()
+        QGuiApplication.processEvents()
+
+    QThread.msleep(5000)  # <-- Show splash for N seconds (N*1000 ms)
+
+    win = MainWindow()
+    win.resize(1200, 800)
+    win.show()
+
+    if splash:
+        splash.finish(win)  
+
     sys.exit(app.exec())
