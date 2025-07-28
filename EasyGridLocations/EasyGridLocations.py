@@ -351,7 +351,7 @@ class GridScene(QGraphicsScene):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("EasyGridLocations v4")
+        self.setWindowTitle("EasyGridLocations v1.2.1")
         self.setFont(QFont("Consolas", 10))
         self.last_dir = str(Path.home())
         self.layers = {}   # name -> {'items':[], 'type','params'}
@@ -366,6 +366,13 @@ class MainWindow(QMainWindow):
         return "\n".join(
             line for line in text.splitlines()
             if not line.strip().startswith("//")
+        )
+
+    def _apply_indent(self, text: str) -> str:
+        indent = "\t" * self.indent_sb.value()
+        return "\n".join(
+            (indent + line) if line.strip() else ""
+            for line in text.splitlines()
         )
 
     def _build_ui(self):
@@ -454,12 +461,25 @@ class MainWindow(QMainWindow):
         sv.clicked.connect(self.on_save)
         ctrl.addWidget(sv)
 
-        # Toggle whether to include commented‐out lines in any copy/save
+        # ─── Include Comments checkbox ──────────────────────────────────────────
+        # This checkbox allows toggling whether to include commented‐out lines in any copy/save    
         from PySide6.QtWidgets import QCheckBox
         self.include_comments_cb = QCheckBox("Include comments")
         self.include_comments_cb.setChecked(True)
         ctrl.addWidget(self.include_comments_cb)
+        # ─── End Include Comments checkbox ──────────────────────────────────────
+        
+        # ─── Indent levels ────────────────────────────────────────────────────────
+        indent_hb = QHBoxLayout()
+        indent_hb.addWidget(QLabel("Indent levels:"))
+        self.indent_sb = QSpinBox()
+        self.indent_sb.setRange(0, 10)    # allow 0–10 tabs
+        self.indent_sb.setValue(2)        # default to 2
+        indent_hb.addWidget(self.indent_sb)
+        ctrl.addLayout(indent_hb)
+        # ─── End Indent levels ────────────────────────────────────────────────────
 
+        # Status bar
         self.statusBar().showMessage("Ready")
         self._mode_changed()
 
@@ -544,11 +564,13 @@ class MainWindow(QMainWindow):
     def _context_copy(self):
         mode = self.mode_cb.currentText()
         if mode == "Locations":
-            # Generate code for all layers (like in _gen_rules, but only the layers part)
             txt = self._gen_locations_code()
+            # no comment toggle here, just indent
+            txt = self._apply_indent(txt)
         else:
             raw = self.info_panel.toPlainText()
             txt = self._apply_comment_toggle(raw)
+            txt = self._apply_indent(txt)
         QApplication.clipboard().setText(txt)
         self.statusBar().showMessage("Copied code block")
 
@@ -844,21 +866,31 @@ class MainWindow(QMainWindow):
     def on_copy(self):
         raw = self._gen_rules()
         txt = self._apply_comment_toggle(raw)
+        txt = self._apply_indent(txt)
         QApplication.clipboard().setText(txt)
         self.statusBar().showMessage("Copied")
 
     def on_save(self):
         raw = self._gen_rules()
         txt = self._apply_comment_toggle(raw)
-        path,_ = QFileDialog.getSaveFileName(
-            self, "Save .rules", self.last_dir, "Rules (*.rules)"
+        txt = self._apply_indent(txt)
+
+        # allow .rules or .txt
+        path, fmt = QFileDialog.getSaveFileName(
+            self, "Save output", self.last_dir,
+            "Rules (*.rules);;Text Files (*.txt)"
         )
         if not path:
             return
-        if not path.endswith(".rules"):
-            path += ".rules"
+
+        # enforce extension
+        ext = ".rules" if fmt == "Rules (*.rules)" else ".txt"
+        if not path.lower().endswith(ext):
+            path += ext
+
         with open(path, "w", encoding="utf-8") as f:
             f.write(txt)
+
         self.last_dir = os.path.dirname(path)
         self.statusBar().showMessage(f"Saved {path}")
 
