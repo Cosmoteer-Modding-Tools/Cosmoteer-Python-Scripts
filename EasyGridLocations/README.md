@@ -8,7 +8,7 @@ No more hand-writing door locations, blocked cells, overlays, or ports—just cl
 
 ## 🟢 Recommended: Just Download the EXE!
 
-1. **Get the latest EasyGridLocations.exe** from [Releases](./releases).
+1. **Get the latest EasyGridLocations.exe** from [Releases](https://github.com/Cosmoteer-Modding-Tools/Cosmoteer-Python-Scripts/releases/tag/easygridlocations-v1.2.0).
 2. Double-click to run! No Python, additional setup, or dependencies.
 3. The tool will open instantly—just start creating your grid locations.
 
@@ -54,7 +54,7 @@ EasyGridLocations currently has **4 main modes**, each to help streamline Cosmot
 **Set allowed door locations and block internal travel cells with a click.**
 **Export:** `AllowedDoorLocations` & `BlockedTravelCells`
 
-> ![Doors & Paths Screenshot Placeholder](screenshots/doors_paths_placeholder.png)
+> ![door_paths](https://github.com/user-attachments/assets/b4778cc2-f420-4cac-8c58-53224949f816)
 
 ---
 
@@ -63,7 +63,7 @@ EasyGridLocations currently has **4 main modes**, each to help streamline Cosmot
 **Visually set which sides of each cell are blocked (up, down, left, right) for precise pathing.**
 **Export:** `BlockedTravelCellDirections`
 
-> ![Blocked Directions Screenshot Placeholder](screenshots/blocked_dirs_placeholder.png)
+> ![blocked_travel_directions](https://github.com/user-attachments/assets/bb285142-50d8-45a9-afbb-ed9eeede2833)
 
 ---
 
@@ -74,7 +74,7 @@ EasyGridLocations currently has **4 main modes**, each to help streamline Cosmot
 * *Supports fractions, rotation, relative/absolute placement, and layering.* - Visual Layering has more features coming soon.
 * **Export:** Named blocks for overlays and crew positions (with or without verbose commented out code as needed)
 
-> ![Locations Screenshot Placeholder](screenshots/locations_placeholder.png)
+> ![locations](https://github.com/user-attachments/assets/9e848047-ca23-4f7b-b687-3ee5c8276ba6)
 
 ---
 
@@ -83,7 +83,7 @@ EasyGridLocations currently has **4 main modes**, each to help streamline Cosmot
 **New for Meltdown: Enable or disable custom thermal/heat ports for your part.**
 **Export:** `Port_Thermal_*` rules blocks automatically optimized with inheritance (with or without verbose commented out code as needed)
 
-> ![Thermal Ports Screenshot Placeholder](screenshots/thermal_ports_placeholder.png)
+> ![thermal_ports](https://github.com/user-attachments/assets/36509f9e-c742-4a4b-822f-4ca45afa3563)
 
 ---
 
@@ -93,6 +93,8 @@ EasyGridLocations currently has **4 main modes**, each to help streamline Cosmot
 2. Choose a mode (Doors & Paths, Blocked Cell Directions, Locations, Thermal Ports).
 3. Click cells and use dialogs to set up your locations.
 4. Copy individual blocks of code (per mode selected) or copy/save all the output code for your `.rules` file.
+
+![interface](https://github.com/user-attachments/assets/f47f1702-0dc4-44d1-abd4-216cf279638a)
 
 ---
 
