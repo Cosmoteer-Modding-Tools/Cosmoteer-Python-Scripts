@@ -8,7 +8,7 @@ No more hand-writing door locations, blocked cells, overlays, or ports—just cl
 
 ## 🟢 Recommended: Just Download the EXE!
 
-1. **Get the latest EasyGridLocations.exe** from [Releases](https://github.com/Cosmoteer-Modding-Tools/Cosmoteer-Python-Scripts/releases/tag/easygridlocations-v1.2.0).
+1. **Get the latest EasyGridLocations.exe** from [Releases](https://github.com/Cosmoteer-Modding-Tools/Cosmoteer-Python-Scripts/releases/tag/latest).
 2. Double-click to run! No Python, additional setup, or dependencies.
 3. The tool will open instantly—just start creating your grid locations.
 
@@ -16,7 +16,7 @@ No more hand-writing door locations, blocked cells, overlays, or ports—just cl
 
 ---
 
-## 🛠️ Want to Build or Run From Source?
+## Want to Build or Run From Source?
 
 If you’d rather generate your own EXE or run from Python source, follow the steps below:
 
