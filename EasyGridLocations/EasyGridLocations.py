@@ -28,6 +28,7 @@ from PySide6.QtGui import QGuiApplication
 CELL_SIZE = 64
 MAX_INTERIOR = 40 # max W or H of interior grid
 ARROW_LEN = 20
+INDENT = "\t"  # for indentation in code blocks
 
 def parse_coord(s: str) -> float:
     """Parse decimal or fraction 'num/den' to float."""
@@ -545,19 +546,19 @@ class MainWindow(QMainWindow):
             for y in range(H):
                 for x in range(W):
                     for d in ["Up", "Down", "Left", "Right"]:
-                        out.append(f"//    {{")
-                        out.append(f"//        Key = [{x}, {y}]")
-                        out.append(f"//        Value = [{d}]")
-                        out.append(f"//    }}")
+                        out.append(f"//{INDENT}{{")
+                        out.append(f"//{INDENT}{INDENT}Key = [{x}, {y}]")
+                        out.append(f"//{INDENT}{INDENT}Value = [{d}]")
+                        out.append(f"//{INDENT}}}")
             out.append("// ]")
             return "\n".join(out)
         else:
             out = ["BlockedTravelCellDirections", "["]
             for (i, j, dirs) in entries:
-                out.append(f"    {{")
-                out.append(f"        Key = [{i}, {j}]")
-                out.append(f"        Value = [{', '.join(dirs)}]")
-                out.append(f"    }}")
+                out.append(f"{INDENT}{{")
+                out.append(f"{INDENT}{INDENT}Key = [{i}, {j}]")
+                out.append(f"{INDENT}{INDENT}Value = [{', '.join(dirs)}]")
+                out.append(f"{INDENT}}}")
             out.append("]")
             return "\n".join(out)
 
@@ -1044,17 +1045,17 @@ class MainWindow(QMainWindow):
             lines.append(f"{name}")
             lines.append("{")
             if L["type"] == "image":
-                lines.append(f'    File = "{p["file"]}"')
-                lines.append(f"    Size = [{p['size'][0]}, {p['size'][1]}]")
-                lines.append(f"    Location = [{p['location'][0]}, {p['location'][1]}]")
-                lines.append(f"    Rotation = {p['rotation']}")
+                lines.append(f'{INDENT}File = "{p["file"]}"')
+                lines.append(f"{INDENT}Size = [{p['size'][0]}, {p['size'][1]}]")
+                lines.append(f"{INDENT}Location = [{p['location'][0]}, {p['location'][1]}]")
+                lines.append(f"{INDENT}Rotation = {p['rotation']}")
             elif L["type"] == "crew":
-                lines.append('    Type = CrewLocation')
-                lines.append(f"    Location = [{p['location'][0]}, {p['location'][1]}]")
-                lines.append(f"    Rotation = {p['rotation']}d")
+                lines.append(f'{INDENT}Type = CrewLocation')
+                lines.append(f"{INDENT}Location = [{p['location'][0]}, {p['location'][1]}]")
+                lines.append(f"{INDENT}Rotation = {p['rotation']}d")
             elif L["type"] == "point":
-                lines.append(f"    Location = [{p['location'][0]}, {p['location'][1]}]")
-                lines.append(f"    Rotation = {p['rotation']}")
+                lines.append(f"{INDENT}Location = [{p['location'][0]}, {p['location'][1]}]")
+                lines.append(f"{INDENT}Rotation = {p['rotation']}")
             lines.append("}")
             lines.append("")
         return "\n".join(lines)
@@ -1111,9 +1112,9 @@ class MainWindow(QMainWindow):
                     if enabled:
                         block = [f"{name} : {base}", "{"]
                         if needs_loc:
-                            block.append(f"    Location = [{loc[0]}, {loc[1]}]")
+                            block.append(f"{INDENT}Location = [{loc[0]}, {loc[1]}]")
                         if needs_dir:
-                            block.append(f"    Direction = {dirn}")
+                            block.append(f"{INDENT}Direction = {dirn}")
                         block.append("}")
                         lines += block
                         lines.append("")
@@ -1123,9 +1124,9 @@ class MainWindow(QMainWindow):
                     else:
                         block = [f"// {name} : {base}", "// {"]
                         if needs_loc:
-                            block.append(f"//     Location = [{loc[0]}, {loc[1]}]")
+                            block.append(f"//{INDENT}Location = [{loc[0]}, {loc[1]}]")
                         if needs_dir:
-                            block.append(f"//     Direction = {dirn}")
+                            block.append(f"//{INDENT}Direction = {dirn}")
                         block.append("// }")
                         lines += block
                         lines.append("")
@@ -1137,8 +1138,8 @@ class MainWindow(QMainWindow):
                     block = [
                         f"// {name} : ~/Part/^/0/BASE_THERMAL_PORT",
                         "// {",
-                        f"//     Location = [{loc[0]}, {loc[1]}]",
-                        f"//     Direction = {dirn}",
+                        f"//{INDENT}Location = [{loc[0]}, {loc[1]}]",
+                        f"//{INDENT}Direction = {dirn}",
                         "// }"
                     ]
                     lines += block
