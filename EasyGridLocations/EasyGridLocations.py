@@ -26,7 +26,7 @@ from PySide6.QtGui import QGuiApplication
 
 
 CELL_SIZE = 64
-MAX_INTERIOR = 16
+MAX_INTERIOR = 40 # max W or H of interior grid
 ARROW_LEN = 20
 
 def parse_coord(s: str) -> float:
