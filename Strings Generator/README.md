@@ -1,4 +1,3 @@
-```markdown
 # Strings Generator
 
 ![Strings Generator Banner](https://via.placeholder.com/800x200?text=Rules+Generator+Banner)
