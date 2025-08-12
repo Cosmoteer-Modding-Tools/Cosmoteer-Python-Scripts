@@ -11,7 +11,7 @@ from fractions import Fraction
 
 from PySide6.QtCore import Qt, QPointF, QThread
 from PySide6.QtGui import (
-    QBrush, QPen, QColor, QPixmap, QFont, QPainter, QFontMetricsF, QTransform
+    QBrush, QPen, QColor, QPixmap, QFont, QPainter, QFontMetricsF, QTransform, QGuiApplication
 )
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -20,10 +20,8 @@ from PySide6.QtWidgets import (
     QGraphicsLineItem, QGraphicsTextItem, QFileDialog, QComboBox,
     QDoubleSpinBox, QTreeWidget, QTreeWidgetItem, QInputDialog,
     QSlider, QMessageBox, QDialog, QFormLayout, QDialogButtonBox,
-    QSpinBox, QGroupBox, QPlainTextEdit, QSplashScreen  
+    QSpinBox, QGroupBox, QPlainTextEdit, QSplashScreen, QAbstractItemView  
 )
-from PySide6.QtGui import QGuiApplication  
-
 
 CELL_SIZE = 64
 MAX_INTERIOR = 40 # max W or H of interior grid
@@ -36,6 +34,22 @@ def parse_coord(s: str) -> float:
         if '/' in s:
             return float(Fraction(s.strip()))
         return float(s)
+    except Exception:
+        return 0.0
+
+def parse_size(s: str) -> float:
+    """
+    Accepts '2.5', '3/4', '1 7/64', '2 32/64', etc.
+    Returns float (0.0 if invalid).
+    """
+    try:
+        s = s.strip()
+        if " " in s:  # mixed number: "<int> <num>/<den>"
+            whole, frac = s.split(None, 1)
+            return float(int(whole) + Fraction(frac))
+        if "/" in s:  # pure fraction: "<num>/<den>"
+            return float(Fraction(s))
+        return float(s)  # decimal
     except Exception:
         return 0.0
 
@@ -126,10 +140,12 @@ class AddLocationDialog(QDialog):
         form.addRow("File:", hb)
 
         # Size (image only)
-        self.w_sb = QSpinBox(); self.w_sb.setRange(1, self.W)
-        self.h_sb = QSpinBox(); self.h_sb.setRange(1, self.H)
-        form.addRow("Width (cells):", self.w_sb)
-        form.addRow("Height (cells):", self.h_sb)
+        self.w_le = QLineEdit("1")
+        self.h_le = QLineEdit("1")
+        self.w_le.setPlaceholderText('e.g. 1.5 or 1 32/64')
+        self.h_le.setPlaceholderText('e.g. 2.25 or 2 16/64')
+        form.addRow("Width (cells):", self.w_le)
+        form.addRow("Height (cells):", self.h_le)
 
         # Coord mode
         self.coord_cb = QComboBox()
@@ -167,6 +183,7 @@ class AddLocationDialog(QDialog):
         self.coord_cb.currentIndexChanged.connect(self._update_visibility)
         self._update_visibility()
 
+
     def _browse_file(self):
         f, _ = QFileDialog.getOpenFileName(
             self, "Select image file", str(Path.home()),
@@ -175,25 +192,36 @@ class AddLocationDialog(QDialog):
         if f:
             self.file_le.setText(f)
 
+
     def _update_visibility(self):
         typ = self.type_cb.currentText()
         is_img = (typ == "Image Overlay")
         is_crew = (typ == "Crew")
         is_rel = (self.coord_cb.currentText() == "Relative")
 
-        for w in (self.file_le, self.w_sb, self.h_sb):
+        # Show/hide file+size controls for image or crew
+        for w in (self.file_le, self.w_le, self.h_le):
             w.setVisible(is_img or is_crew)
 
+        # Crew defaults (fixed 1×1, file forced to crew.png)
         if is_crew:
             self.file_le.setText(resource_path("default_images/crew.png"))
             self.file_le.setEnabled(False)
-            self.w_sb.setValue(1)
-            self.w_sb.setEnabled(False)
-            self.h_sb.setValue(1)
-            self.h_sb.setEnabled(False)
+            self.w_le.setText("1")
+            self.w_le.setEnabled(False)
+            self.h_le.setText("1")
+            self.h_le.setEnabled(False)
+        else:
+            self.file_le.setEnabled(True)
+            self.w_le.setEnabled(True)
+            self.h_le.setEnabled(True)
 
+        # Keep the "File:" row itself hidden/shown (it’s the parent layout container)
         self.file_le.parentWidget().setVisible(is_img or is_crew)
+
+        # Base target only matters for relative placement
         self.base_cb.setVisible(is_rel)
+
 
     def accept(self):
         name = self.name_le.text().strip()
@@ -226,7 +254,12 @@ class AddLocationDialog(QDialog):
                 QMessageBox.warning(self, "File missing", "Select a valid image file.")
                 return
             res["file"] = file
-            res["w"], res["h"] = self.w_sb.value(), self.h_sb.value()
+            w_val = parse_size(self.w_le.text())
+            h_val = parse_size(self.h_le.text())
+            if w_val <= 0 or h_val <= 0:
+                QMessageBox.warning(self, "Invalid size", "Enter a positive width/height (e.g., 1.5 or 1 32/64).")
+                return
+            res["w"], res["h"] = w_val, h_val
         elif typ == "crew":
             res["file"] = resource_path("default_images/crew.png")
             res["w"], res["h"] = 1, 1
@@ -437,6 +470,10 @@ class MainWindow(QMainWindow):
         self.tree.itemSelectionChanged.connect(self._on_tree_sel)
         ctrl.addWidget(self.tree, 1)
         self.tree.hide()  # Start hidden
+
+        # Allows Drag & Drop reordering of items
+        self.tree.setDragDropMode(QAbstractItemView.InternalMove)
+        self.tree.model().rowsMoved.connect(lambda *args: self._rebuild_z_order())
 
         self.props_label = QLabel("Properties:")
         ctrl.addWidget(self.props_label)
@@ -658,8 +695,11 @@ class MainWindow(QMainWindow):
         f,_=QFileDialog.getOpenFileName(self,"Sprite",self.last_dir,"Images (*.png *.jpg *.bmp)")
         if not f: return
         self.last_dir=os.path.dirname(f)
+        f = opts["file"]; w, h = opts["w"], opts["h"]
+        width_px  = int(round(w * CELL_SIZE))
+        height_px = int(round(h * CELL_SIZE))
         pix = QPixmap(f).scaled(
-            self.scene.W*CELL_SIZE, self.scene.H*CELL_SIZE,
+            width_px, height_px,
             Qt.IgnoreAspectRatio, Qt.SmoothTransformation
         )
         item=QGraphicsPixmapItem(pix)
@@ -788,6 +828,7 @@ class MainWindow(QMainWindow):
         node.setData(0, Qt.UserRole, name)
         node.setCheckState(0, Qt.Checked)
         self.tree.setCurrentItem(node)
+        self._rebuild_z_order()
         self.statusBar().showMessage(f"Added {name}")
         self._refresh_info_panel()
     
@@ -806,23 +847,44 @@ class MainWindow(QMainWindow):
         L = self.layers[key]
         p = L["params"]
         self.props_box.show()
+
         self.p_name = QLineEdit(key)
         self.props_layout.addRow("Name:", self.p_name)
+
         self.p_x = QLineEdit(str(p["location"][0]))
         self.p_y = QLineEdit(str(p["location"][1]))
         self.props_layout.addRow("X:", self.p_x)
         self.props_layout.addRow("Y:", self.p_y)
+
         self.p_rot = QDoubleSpinBox()
         self.p_rot.setRange(-360.0, 360.0)
         self.p_rot.setValue(p["rotation"])
         self.p_rot.setSuffix("°")
         self.props_layout.addRow("Rotation:", self.p_rot)
+
+        if L["type"] == "image":
+            size = p.get("size", (1, 1))
+            self.p_w = QLineEdit(str(size[0]))
+            self.p_h = QLineEdit(str(size[1]))
+            self.p_w.setPlaceholderText("e.g. 1.5 or 1 32/64")
+            self.p_h.setPlaceholderText("e.g. 2 or 2 7/64")
+            self.props_layout.addRow("Width (cells):", self.p_w)
+            self.props_layout.addRow("Height (cells):", self.p_h)
+
         btn_remove = QPushButton("Remove Layer")
         btn_remove.clicked.connect(lambda: self._remove_layer(key))
         self.props_layout.addRow(btn_remove)
+
         btn_apply = QPushButton("Apply Changes")
         btn_apply.clicked.connect(lambda: self._apply_props(key))
         self.props_layout.addRow(btn_apply)
+
+        # Move layer in the list (affects Z stacking)
+        btn_up = QPushButton("Move Up")
+        btn_down = QPushButton("Move Down")
+        btn_up.clicked.connect(lambda: self._move_layer(key, -1))
+        btn_down.clicked.connect(lambda: self._move_layer(key, +1))
+        self.props_layout.addRow(btn_up, btn_down)
 
     def _apply_props(self,key):
         L=self.layers[key]; items=L["items"]; p=L["params"]
@@ -840,15 +902,44 @@ class MainWindow(QMainWindow):
             self.scene.addItem(new_arr)
             items[1]=new_arr
         else:
-            img,arr=items
-            pw,ph=img.pixmap().width(),img.pixmap().height()
-            img.setTransformOriginPoint(pw/2,ph/2)
+            img, arr = items
+        
+            if L["type"] == "image":
+                # Requires parse_size() from step 1. If you haven't added it,
+                # add the helper right under parse_coord().
+                new_w = parse_size(self.p_w.text()) if hasattr(self, "p_w") else p["size"][0]
+                new_h = parse_size(self.p_h.text()) if hasattr(self, "p_h") else p["size"][1]
+                if new_w <= 0 or new_h <= 0:
+                    QMessageBox.warning(self, "Invalid size", "Width/Height must be > 0.")
+                    return
+        
+                # Store the new logical size
+                p["size"] = (new_w, new_h)
+        
+                # Rescale the pixmap to cell pixels
+                f = p["file"]
+                new_pix = QPixmap(f).scaled(
+                    int(round(new_w * CELL_SIZE)),
+                    int(round(new_h * CELL_SIZE)),
+                    Qt.IgnoreAspectRatio, Qt.SmoothTransformation
+                )
+                img.setPixmap(new_pix)
+                pw, ph = new_pix.width(), new_pix.height()
+            else:
+                # crew: keep current pixmap size
+                pw, ph = img.pixmap().width(), img.pixmap().height()
+        
+            # re-center origin & apply rotation/position
+            img.setTransformOriginPoint(pw / 2, ph / 2)
             img.setRotation(rot)
-            img.setPos(px-pw/2, py-ph/2)
+            img.setPos(px - pw / 2, py - ph / 2)
+        
+            # rebuild the arrow
             self.scene.removeItem(arr)
-            new_arr=self._make_arrow(px,py,rot)
+            new_arr = self._make_arrow(px, py, rot)
             self.scene.addItem(new_arr)
-            items[1]=new_arr
+            items[1] = new_arr
+        
         self.statusBar().showMessage(f"Updated {key}")
         self._refresh_info_panel()
 
@@ -863,6 +954,56 @@ class MainWindow(QMainWindow):
         self.props_box.hide()
         self.statusBar().showMessage(f"Removed {key}")
         self._refresh_info_panel()
+
+    def _move_layer(self, key, delta):
+        # keep __sprite__ pinned at the bottom
+        if key == "__sprite__":
+            return
+        parent = self.tree.invisibleRootItem()
+        item = self.tree.currentItem()
+        if not item:
+            return
+        idx = parent.indexOfChild(item)
+        new_idx = max(0, min(parent.childCount() - 1, idx + delta))
+        if new_idx == idx:
+            return
+        take = parent.takeChild(idx)
+        parent.insertChild(new_idx, take)
+        self.tree.setCurrentItem(take)
+        self._rebuild_z_order()
+
+    def _rebuild_z_order(self):
+        """
+        Assign ascending z-values based on the order in the tree (top item = highest Z).
+        Keeps __sprite__ way below everything else.
+        """
+        root = self.tree.invisibleRootItem()
+
+        # push sprite to bottom if present
+        if "__sprite__" in self.layers:
+            for g in self.layers["__sprite__"]["items"]:
+                g.setZValue(-1000.0)
+
+        base = 0.0
+        step = 10.0  # room so arrow can sit base+1
+        for i in range(root.childCount()):
+            item = root.child(i)
+            key = item.data(0, Qt.UserRole)
+            if not key or key == "__sprite__":
+                continue
+            L = self.layers[key]
+            its = L["items"]
+            # main graphic lower, arrow above
+            if L["type"] in ("image", "crew", "point"):
+                its[0].setZValue(base)
+                if len(its) > 1:
+                    its[1].setZValue(base + 1.0)
+            else:
+                # fallback: stagger everything in this layer
+                for k, g in enumerate(its):
+                    g.setZValue(base + k)
+            base += step
+
 
     def on_copy(self):
         raw = self._gen_rules()
