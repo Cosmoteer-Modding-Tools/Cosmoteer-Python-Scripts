@@ -1,6 +1,56 @@
 
 # TODO
-# Locations Mode should include a "Crew" option in the AddLocation popup dialog under "Type" menu, it should default the image of a crew member for easier placement (default_images/crew.png).  For convenince it should ensure the size is 1x1 and image orientation iss the same default as adding images manually. When selected it should be at 100% opacity and toggleable in the layer menu (all same features of adding points and images - basically a combination of both allowing the direction arrow to overlay so the user can be precise in its rotation - also adjustable and applyed in properties when highlighted in teh layer menu like the other features.).
+# Quirks:
+# 1) Adding Image to overlay should default a size rounded based on number of pixels.  E.g., 128x128px = 2, 2
+# 1a) Loading Base Image doesn't auto input the correct location (e.g., middle), given the current UI, properties still show and if the user accidently hits "apply changes" they will accidently for it show up at 0,0 (which is the default)
+# 2) Browsing for a file (Base Image or Image Overlay) should set the directory as default for the next browse.
+# 3) Moving up and down doesn't dynamically change the layer its assigned to.  
+# 4) Making any changes auto reassigns the layer to constructure structure for some reason?
+# 5) Base Layer can be assigned to Floor by Default
+# 6) Ideally a layer seperator should be defaulted to show in the layers menu allowing a user to easily see where they are dragging and droping the Z, something to the effect of:
+#   Checkbox - ItemName
+#   --- Floor ---
+#   Checkbox - Item Name2
+#   --- Roof ---
+# 7) Output code should always have 'd' after rotation degree (e.g., 90d) 
+# 8) Syntax needs fixing 
+# 8a) Images should include Layer assignment e.g., 				Layer = "floors"
+# 8b) Selecting Relative in the dialog should remove the location value of the item and assume location of the item it is nested to (picked from the layers menu) Output should be Offset = [x,y] - this will need to dynamically set to absolute and adjust to assume Location = "[x,y]" if "unnested" Note that Absolute / Relative toggles and Offset field should be included in properties menu for Images
+# 8c) Example of Syntax for nested items w/offset
+#		TurretGraphics
+#		{
+#			Type = Graphics
+#			Location = [0, 0]
+#			Rotation = 90d
+#			OperationalDoodad
+#			{
+#				Layer = "turrets" 
+#				Offset = [0, 2.625-(12/64)]
+#				DamageLevels
+#				[
+#					{
+#						File = "floor.png"
+#						Size = [3, 3]
+#					}
+#				]
+#			}
+#			NonOperationalDoodad
+#			{
+#				Layer = "turrets" 
+#				Offset = [0, 2.625]
+#				DamageLevels
+#				[
+#					{
+#						File = "gun_doodads_off.png"
+#						Size = [1, 2]
+#					}
+#				]
+#			}
+#		}
+# Enhancements: 
+# 1) Changes done in properties should be realtimed to the canvas applying can save changes to the underlying code.  
+# 2) Ability to nudge via arrow keys or UI directional pads (e.g., left/right/up/down)
+# 3) Ability to zoom in on canvas for finetuning locations
 
 #!/usr/bin/env python3
 # EasyGridLocations_PySide6_v2.py
@@ -27,6 +77,32 @@ CELL_SIZE = 64
 MAX_INTERIOR = 40 # max W or H of interior grid
 ARROW_LEN = 20
 INDENT = "\t"  # for indentation in code blocks
+
+# --- Fixed layer types & their UniqueBucket Z --- (more can be added here)
+LAYER_Z = {
+    "structure_construction": -750,
+    "floors":                -700,
+    "turrets":               -600,
+    "doodads_low":           -500,
+    "walls_stencil":         -400,
+    "external_walls":        -300,
+    "walls":                 -200,
+    "doors":                 -100,
+    # (CREW renders here, between doors and weapons)
+    "weapons":                  0,
+    "doodads_high":           100,
+    "lights_add":             200,
+    "fire":                   300,
+    "roofs":                 1000,
+    "roof_doodads":          1100,
+    "construction":          1150,
+    "construction_delta":    1175,
+    "roof_turrets":          1200,
+    "roof_lights_fancy":     1300,
+}
+LAYER_TYPES = list(LAYER_Z.keys())
+CREW_Z   = (LAYER_Z["doors"] + LAYER_Z["weapons"]) / 2.0  # -50
+POINTS_Z = 9999  # keep points drawn on top in the editor
 
 def parse_coord(s: str) -> float:
     """Parse decimal or fraction 'num/den' to float."""
@@ -108,6 +184,8 @@ def vanilla_ports_all(W, H, port_status):
             ports.append((f"Port_Thermal_MidLeft{y}", [0,y], "Left", port_status.get((0,y,"Left"), False)))
         return ports
 
+
+
 class AddLocationDialog(QDialog):
     def __init__(self, parent, click_pos, layers, W, H):
         super().__init__(parent)
@@ -146,6 +224,11 @@ class AddLocationDialog(QDialog):
         self.h_le.setPlaceholderText('e.g. 2.25 or 2 16/64')
         form.addRow("Width (cells):", self.w_le)
         form.addRow("Height (cells):", self.h_le)
+
+        # Layer type (image only)
+        self.layer_type_cb = QComboBox()
+        self.layer_type_cb.addItems(LAYER_TYPES)
+        form.addRow("Layer type:", self.layer_type_cb)
 
         # Coord mode
         self.coord_cb = QComboBox()
@@ -199,6 +282,8 @@ class AddLocationDialog(QDialog):
         is_crew = (typ == "Crew")
         is_rel = (self.coord_cb.currentText() == "Relative")
 
+        self.layer_type_cb.setEnabled(is_img) # Only for images
+
         # Show/hide file+size controls for image or crew
         for w in (self.file_le, self.w_le, self.h_le):
             w.setVisible(is_img or is_crew)
@@ -221,7 +306,6 @@ class AddLocationDialog(QDialog):
 
         # Base target only matters for relative placement
         self.base_cb.setVisible(is_rel)
-
 
     def accept(self):
         name = self.name_le.text().strip()
@@ -260,6 +344,10 @@ class AddLocationDialog(QDialog):
                 QMessageBox.warning(self, "Invalid size", "Enter a positive width/height (e.g., 1.5 or 1 32/64).")
                 return
             res["w"], res["h"] = w_val, h_val
+            # Include the layer type in the result; fall back if UI not added yet
+            lt_cb = getattr(self, "layer_type_cb", None)
+            res["layer_type"] = lt_cb.currentText() if lt_cb else "floors"
+            res["layer_type"] = self.layer_type_cb.currentText()
         elif typ == "crew":
             res["file"] = resource_path("default_images/crew.png")
             res["w"], res["h"] = 1, 1
@@ -385,7 +473,7 @@ class GridScene(QGraphicsScene):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("EasyGridLocations v1.2.1")
+        self.setWindowTitle("EasyGridLocations v1.3")
         self.setFont(QFont("Consolas", 10))
         self.last_dir = str(Path.home())
         self.layers = {}   # name -> {'items':[], 'type','params'}
@@ -427,7 +515,8 @@ class MainWindow(QMainWindow):
         b=QPushButton("Generate"); b.clicked.connect(self.on_gen); sh.addWidget(b)
         ctrl.addLayout(sh)
         # Load Sprite button: always visible, but disabled until grid is generated
-        self.load_sprite_btn = QPushButton("Load Sprite")
+        self.load_sprite_btn = QPushButton("Load Base Image")
+        self.load_sprite_btn.setToolTip("Loads the base image and scales it to the Part size.")
         self.load_sprite_btn.setEnabled(False)  # Disabled at start
         self.load_sprite_btn.clicked.connect(self.on_sprite)
         ctrl.addWidget(self.load_sprite_btn)
@@ -467,6 +556,7 @@ class MainWindow(QMainWindow):
         self.layers_label.hide()  # Start hidden
 
         self.tree = QTreeWidget(); self.tree.setHeaderHidden(True)
+        self.tree.itemChanged.connect(self._on_tree_item_changed)
         self.tree.itemSelectionChanged.connect(self._on_tree_sel)
         ctrl.addWidget(self.tree, 1)
         self.tree.hide()  # Start hidden
@@ -691,38 +781,63 @@ class MainWindow(QMainWindow):
         # self._refresh_info_panel()
 
     def on_sprite(self):
-        if not self.scene: return
-        f,_=QFileDialog.getOpenFileName(self,"Sprite",self.last_dir,"Images (*.png *.jpg *.bmp)")
-        if not f: return
-        self.last_dir=os.path.dirname(f)
-        f = opts["file"]; w, h = opts["w"], opts["h"]
-        width_px  = int(round(w * CELL_SIZE))
-        height_px = int(round(h * CELL_SIZE))
+        if not self.scene:
+            return
+        # pick file
+        f, _ = QFileDialog.getOpenFileName(
+            self, "Load Base Image", self.last_dir, "Images (*.png *.jpg *.bmp)"
+        )
+        if not f:
+            return
+        self.last_dir = os.path.dirname(f)
+
+        # scale to the Part (inner grid) size
+        W, H = self.scene.W, self.scene.H
+        width_px  = int(round(W * CELL_SIZE))
+        height_px = int(round(H * CELL_SIZE))
         pix = QPixmap(f).scaled(
             width_px, height_px,
             Qt.IgnoreAspectRatio, Qt.SmoothTransformation
         )
-        item=QGraphicsPixmapItem(pix)
-        item.setOpacity(0.7); item.setZValue(0.5)
-        ox=(CELL_SIZE + (self.scene.W*CELL_SIZE-pix.width())/2)
-        oy=(CELL_SIZE + (self.scene.H*CELL_SIZE-pix.height())/2)
-        item.setPos(ox,oy)
-        self.scene.addItem(item)
-        arrow=self._make_arrow(ox+pix.width()/2, oy+pix.height()/2, 0)
+
+        # create & center over the INNER grid (offset by the 1-cell border)
+        img = QGraphicsPixmapItem(pix)
+        img.setOpacity(0.7)
+        img.setZValue(0.5)  # above grid (0/0.1), below all overlays
+        ox = CELL_SIZE + (W * CELL_SIZE - pix.width())  / 2
+        oy = CELL_SIZE + (H * CELL_SIZE - pix.height()) / 2
+        img.setPos(ox, oy)
+        img.setTransformOriginPoint(pix.width() / 2, pix.height() / 2)
+        img.setRotation(0)
+
+        self.scene.addItem(img)
+        # keep the little red arrow, centered
+        arrow = self._make_arrow(ox + pix.width() / 2, oy + pix.height() / 2, 0)
         self.scene.addItem(arrow)
-        name="__sprite__"
-        self.layers[name]={
-            "items":[item,arrow],
-            "type":"image",
-            "params":{
-                "file":f,"size":(self.scene.W,self.scene.H),
-                "location":(0,0),"rotation":0.0
-            }
+
+        # register layer (special key), auto size = part size
+        name = "__sprite__"
+        self.layers[name] = {
+            "items": [img, arrow],
+            "type": "image",
+            "params": {
+                "file": f,
+                "size": (W, H),
+                "location": (0, 0),
+                "rotation": 0.0,
+            },
         }
-        node=QTreeWidgetItem(self.tree,["Sprite"])
-        node.setData(0,Qt.UserRole,name)
-        node.setCheckState(0,Qt.Checked)
+
+        # show as "Base Image" in the tree
+        node = QTreeWidgetItem(self.tree, ["Base Image"])
+        node.setData(0, Qt.UserRole, name)
+        node.setCheckState(0, Qt.Checked)
         self.tree.setCurrentItem(node)
+
+        # restack after adding
+        self._rebuild_z_order()
+
+
 
     def _make_arrow(self,x,y,deg):
         rad = math.radians(deg - 90)
@@ -775,62 +890,93 @@ class MainWindow(QMainWindow):
             base = opts["base"]
             bx, by = self.layers[base]["params"]["location"]
             x, y = bx + x, by + y
+
         px, py = (x + 1) * CELL_SIZE, (y + 1) * CELL_SIZE
         rot = opts["rotation"]
         name = opts["name"]
 
         if opts["type"] == "point":
+            # ----- POINT (no file/size/layer_type) -----
             dot = QGraphicsEllipseItem(px - 5, py - 5, 10, 10)
-            dot.setBrush(QBrush(Qt.red)); dot.setZValue(0.9)
+            dot.setBrush(QBrush(Qt.red))
+            dot.setZValue(9999)  # points on top in editor
             dot.setTransformOriginPoint(px, py)
             dot.setRotation(rot)
             arr = self._make_arrow(px, py, rot)
-            self.scene.addItem(dot); self.scene.addItem(arr)
+            self.scene.addItem(dot)
+            self.scene.addItem(arr)
             self.layers[name] = {
                 "items": [dot, arr], "type": "point",
-                "params": {"location": (x, y), "rotation": rot}
+                "params": {
+                    "location": (x, y),
+                    "rotation": rot
+                }
             }
+
         elif opts["type"] == "crew":
+            # ----- CREW (fixed 1x1, no explicit layer_type in code export) -----
             f = resource_path("default_images/crew.png")
             w, h = 1, 1
             pix = QPixmap(f).scaled(
-                w * CELL_SIZE, h * CELL_SIZE,
+                int(round(w * CELL_SIZE)), int(round(h * CELL_SIZE)),
                 Qt.IgnoreAspectRatio, Qt.SmoothTransformation
             )
-            img = QGraphicsPixmapItem(pix); img.setOpacity(0.7); img.setZValue(0.5)
+            img = QGraphicsPixmapItem(pix)
+            img.setOpacity(0.7)
+            img.setZValue(0.5)
             img.setTransformOriginPoint(pix.width() / 2, pix.height() / 2)
             img.setRotation(rot)
             img.setPos(px - pix.width() / 2, py - pix.height() / 2)
             arr = self._make_arrow(px, py, rot)
-            self.scene.addItem(img); self.scene.addItem(arr)
+            self.scene.addItem(img)
+            self.scene.addItem(arr)
             self.layers[name] = {
                 "items": [img, arr], "type": "crew",
-                "params": {"file": f, "size": (w, h), "location": (x, y), "rotation": rot}
+                "params": {
+                    "file": "default_images/crew.png",
+                    "size": (1, 1),
+                    "location": (x, y),
+                    "rotation": rot
+                }
             }
+
         else:
-            f = opts["file"]; w, h = opts["w"], opts["h"]
+            # ----- IMAGE OVERLAY (file/size + layer_type) -----
+            f = opts["file"]
+            w, h = opts["w"], opts["h"]
             pix = QPixmap(f).scaled(
-                w * CELL_SIZE, h * CELL_SIZE,
+                int(round(w * CELL_SIZE)), int(round(h * CELL_SIZE)),
                 Qt.IgnoreAspectRatio, Qt.SmoothTransformation
             )
-            img = QGraphicsPixmapItem(pix); img.setOpacity(0.7); img.setZValue(0.5)
+            img = QGraphicsPixmapItem(pix)
+            img.setOpacity(0.7)
+            img.setZValue(0.5)
             img.setTransformOriginPoint(pix.width() / 2, pix.height() / 2)
             img.setRotation(rot)
             img.setPos(px - pix.width() / 2, py - pix.height() / 2)
             arr = self._make_arrow(px, py, rot)
-            self.scene.addItem(img); self.scene.addItem(arr)
+            self.scene.addItem(img)
+            self.scene.addItem(arr)
             self.layers[name] = {
                 "items": [img, arr], "type": "image",
-                "params": {"file": f, "size": (w, h), "location": (x, y), "rotation": rot}
+                "params": {
+                    "file": f,
+                    "size": (w, h),
+                    "location": (x, y),
+                    "rotation": rot,
+                    "layer_type": opts.get("layer_type", "floors")
+                }
             }
 
         node = QTreeWidgetItem(self.tree, [name])
         node.setData(0, Qt.UserRole, name)
         node.setCheckState(0, Qt.Checked)
+        node.setFlags(node.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
         self.tree.setCurrentItem(node)
         self._rebuild_z_order()
         self.statusBar().showMessage(f"Added {name}")
         self._refresh_info_panel()
+
     
     def _on_tree_sel(self):
         items = self.tree.selectedItems()
@@ -862,14 +1008,15 @@ class MainWindow(QMainWindow):
         self.p_rot.setSuffix("°")
         self.props_layout.addRow("Rotation:", self.p_rot)
 
+        # Layer Type (images only)
         if L["type"] == "image":
-            size = p.get("size", (1, 1))
-            self.p_w = QLineEdit(str(size[0]))
-            self.p_h = QLineEdit(str(size[1]))
-            self.p_w.setPlaceholderText("e.g. 1.5 or 1 32/64")
-            self.p_h.setPlaceholderText("e.g. 2 or 2 7/64")
-            self.props_layout.addRow("Width (cells):", self.p_w)
-            self.props_layout.addRow("Height (cells):", self.p_h)
+            # assumes LAYER_TYPES is defined globally
+            self.p_layer_type = QComboBox()
+            self.p_layer_type.addItems(LAYER_TYPES if 'LAYER_TYPES' in globals() else [
+                "floors","walls","doodads_low","doodads_high","weapons","doors"
+            ])
+            self.p_layer_type.setCurrentText(p.get("layer_type", "floors"))
+            self.props_layout.addRow("Layer type:", self.p_layer_type)
 
         btn_remove = QPushButton("Remove Layer")
         btn_remove.clicked.connect(lambda: self._remove_layer(key))
@@ -886,37 +1033,47 @@ class MainWindow(QMainWindow):
         btn_down.clicked.connect(lambda: self._move_layer(key, +1))
         self.props_layout.addRow(btn_up, btn_down)
 
-    def _apply_props(self,key):
-        L=self.layers[key]; items=L["items"]; p=L["params"]
-        x=parse_coord(self.p_x.text()); y=parse_coord(self.p_y.text())
-        rot=self.p_rot.value()
-        p["location"]=(x,y); p["rotation"]=rot
-        px,py=(x+1)*CELL_SIZE,(y+1)*CELL_SIZE
-        if L["type"]=="point":
-            dot,arr=items
-            dot.setRect(px-5,py-5,10,10)
-            dot.setTransformOriginPoint(px,py)
+    def _apply_props(self, key):
+        L = self.layers[key]
+        items = L["items"]
+        p = L["params"]
+
+        # location & rotation
+        x = parse_coord(self.p_x.text())
+        y = parse_coord(self.p_y.text())
+        rot = self.p_rot.value()
+        p["location"] = (x, y)
+        p["rotation"] = rot
+
+        px, py = (x + 1) * CELL_SIZE, (y + 1) * CELL_SIZE
+
+        if L["type"] == "point":
+            # update point
+            dot, arr = items
+            dot.setRect(px - 5, py - 5, 10, 10)
+            dot.setTransformOriginPoint(px, py)
             dot.setRotation(rot)
             self.scene.removeItem(arr)
-            new_arr=self._make_arrow(px,py,rot)
+            new_arr = self._make_arrow(px, py, rot)
             self.scene.addItem(new_arr)
-            items[1]=new_arr
+            items[1] = new_arr
+
         else:
+            # image or crew
             img, arr = items
-        
+
+            # capture layer type from properties (images only)
+            if L["type"] == "image" and hasattr(self, "p_layer_type"):
+                p["layer_type"] = self.p_layer_type.currentText()
+
+            # handle size & pixmap
             if L["type"] == "image":
-                # Requires parse_size() from step 1. If you haven't added it,
-                # add the helper right under parse_coord().
                 new_w = parse_size(self.p_w.text()) if hasattr(self, "p_w") else p["size"][0]
                 new_h = parse_size(self.p_h.text()) if hasattr(self, "p_h") else p["size"][1]
                 if new_w <= 0 or new_h <= 0:
                     QMessageBox.warning(self, "Invalid size", "Width/Height must be > 0.")
                     return
-        
-                # Store the new logical size
                 p["size"] = (new_w, new_h)
-        
-                # Rescale the pixmap to cell pixels
                 f = p["file"]
                 new_pix = QPixmap(f).scaled(
                     int(round(new_w * CELL_SIZE)),
@@ -928,20 +1085,23 @@ class MainWindow(QMainWindow):
             else:
                 # crew: keep current pixmap size
                 pw, ph = img.pixmap().width(), img.pixmap().height()
-        
+
             # re-center origin & apply rotation/position
             img.setTransformOriginPoint(pw / 2, ph / 2)
             img.setRotation(rot)
             img.setPos(px - pw / 2, py - ph / 2)
-        
+
             # rebuild the arrow
             self.scene.removeItem(arr)
             new_arr = self._make_arrow(px, py, rot)
             self.scene.addItem(new_arr)
             items[1] = new_arr
-        
+
+        # restack & refresh
+        self._rebuild_z_order()
         self.statusBar().showMessage(f"Updated {key}")
         self._refresh_info_panel()
+
 
     def _remove_layer(self,key):
         for item in self.layers[key]["items"]:
@@ -954,6 +1114,17 @@ class MainWindow(QMainWindow):
         self.props_box.hide()
         self.statusBar().showMessage(f"Removed {key}")
         self._refresh_info_panel()
+
+    def _on_tree_item_changed(self, item, col):
+        key = item.data(0, Qt.UserRole)
+        if not key:
+            return
+        L = self.layers.get(key)
+        if not L:
+            return
+        visible = (item.checkState(0) == Qt.Checked)
+        for g in L["items"]:
+            g.setVisible(visible)
 
     def _move_layer(self, key, delta):
         # keep __sprite__ pinned at the bottom
@@ -974,35 +1145,105 @@ class MainWindow(QMainWindow):
 
     def _rebuild_z_order(self):
         """
-        Assign ascending z-values based on the order in the tree (top item = highest Z).
-        Keeps __sprite__ way below everything else.
+        Editor Z rules:
+            - Base Image (__sprite__) sits at 0.5 (above grid 0/0.1, below overlays)
+            - Image overlays ordered by LAYER_Z rank (lowest bucket under highest),
+            but mapped to editor-friendly bands: 1.0 + rank*10
+            - Within the same layer_type, keep current tree order via tiny offsets
+            - Crew sits between 'doors' and 'weapons' bands
+            - Points always on top
         """
         root = self.tree.invisibleRootItem()
 
-        # push sprite to bottom if present
+        # 1) Base image above grid, below overlays
         if "__sprite__" in self.layers:
             for g in self.layers["__sprite__"]["items"]:
-                g.setZValue(-1000.0)
+                g.setZValue(0.5)
 
-        base = 0.0
-        step = 10.0  # room so arrow can sit base+1
+        # 2) Determine ranks from LAYER_Z (fall back to default map if missing)
+        try:
+            layer_z_map = LAYER_Z
+        except NameError:
+            layer_z_map = {
+                "structure_construction": -750, "floors": -700, "turrets": -600,
+                "doodads_low": -500, "walls_stencil": -400, "external_walls": -300,
+                "walls": -200, "doors": -100, "weapons": 0, "doodads_high": 100,
+                "lights_add": 200, "fire": 300, "roofs": 1000, "roof_doodads": 1100,
+                "construction": 1150, "construction_delta": 1175, "roof_turrets": 1200,
+                "roof_lights_fancy": 1300,
+            }
+
+        # sort by bucket (low → high) and rank them
+        sorted_types = [t for t, _ in sorted(layer_z_map.items(), key=lambda kv: kv[1])]
+        rank = {t: i for i, t in enumerate(sorted_types)}
+
+        band = 10.0
+        base_offset = 1.0  # all overlays start above sprite/grid
+        # crew midway between 'doors' and 'weapons'
+        r_doors = rank.get("doors", 0)
+        r_weapons = rank.get("weapons", r_doors + 1)
+        crew_base = base_offset + ((r_doors + r_weapons) / 2.0) * band
+        points_z = 9999.0
+
+        # 3) Collect keys in current tree order
+        grouped = {}    # layer_type -> [keys...]
+        crew_keys = []
+        point_keys = []
+        other_keys = []
+
         for i in range(root.childCount()):
-            item = root.child(i)
-            key = item.data(0, Qt.UserRole)
+            it = root.child(i)
+            key = it.data(0, Qt.UserRole)
             if not key or key == "__sprite__":
                 continue
-            L = self.layers[key]
-            its = L["items"]
-            # main graphic lower, arrow above
-            if L["type"] in ("image", "crew", "point"):
-                its[0].setZValue(base)
-                if len(its) > 1:
-                    its[1].setZValue(base + 1.0)
+            L = self.layers.get(key)
+            if not L:
+                continue
+            if L["type"] == "image":
+                lt = L["params"].get("layer_type", "floors")
+                grouped.setdefault(lt, []).append(key)
+            elif L["type"] == "crew":
+                crew_keys.append(key)
+            elif L["type"] == "point":
+                point_keys.append(key)
             else:
-                # fallback: stagger everything in this layer
-                for k, g in enumerate(its):
-                    g.setZValue(base + k)
-            base += step
+                other_keys.append(key)
+
+        # 4) Apply Z for image layers: 1.0 + rank*10 (+ tiny offsets)
+        for lt, keys in grouped.items():
+            r = rank.get(lt, 0)
+            base = base_offset + r * band
+            for idx, key in enumerate(keys):
+                z = base + idx * 0.01
+                its = self.layers[key]["items"]
+                its[0].setZValue(z)
+                if len(its) > 1:
+                    its[1].setZValue(z + 0.001)
+
+        # 5) Crew between doors & weapons
+        for idx, key in enumerate(crew_keys):
+            z = crew_base + idx * 0.01
+            its = self.layers[key]["items"]
+            its[0].setZValue(z)
+            if len(its) > 1:
+                its[1].setZValue(z + 0.001)
+
+        # 6) Points always on top (editor-only)
+        for idx, key in enumerate(point_keys):
+            z = points_z + idx * 0.01
+            its = self.layers[key]["items"]
+            its[0].setZValue(z)
+            if len(its) > 1:
+                its[1].setZValue(z + 0.001)
+
+        # 7) Fallback any odd types to the topmost band
+        top_band = base_offset + (len(sorted_types) + 1) * band
+        for idx, key in enumerate(other_keys):
+            its = self.layers[key]["items"]
+            z = top_band + idx * 0.01
+            its[0].setZValue(z)
+            if len(its) > 1:
+                its[1].setZValue(z + 0.001)
 
 
     def on_copy(self):
