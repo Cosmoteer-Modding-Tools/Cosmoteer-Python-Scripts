@@ -1,7 +1,7 @@
 
-# ImageDestroyer: A Cosmoteer Texture Damage Tool
+# Cosmoteer Image Destroyer: A Cosmoteer Texture Damage Tool
 
-**ImageDestroyer** is a small GUI tool for Cosmoteer modding that “physically” damages an image: it punches real holes (alpha cut-outs), burns pixels, and sprinkles scorches and shrapnel on top — all driven by your own tileable stencils and stamps (don't worry some are already included).
+**Cosmoteer Image Destroyer** is a small GUI tool for Cosmoteer modding that “physically” damages an image: it punches real holes (alpha cut-outs), burns pixels, and sprinkles scorches and shrapnel on top — all driven by your own tileable stencils and stamps (don't worry some are already included).
 
 - Holes are cut only where your base image is non-transparent.
 - Hole covers are pasted into the cutouts with matching rotation and tile alignment.
@@ -11,7 +11,7 @@
 
 ## 🟢 Recommended: Just Download the EXE!
 
-1. Grab **ImageDestroyer.exe** from Releases.
+1. Grab **ImageDestroyer.exe** from [Releases](https://github.com/Cosmoteer-Modding-Tools/Cosmoteer-Python-Scripts/releases/tag/imagedestroyer-v1.0).
 2. Double-click to run — no Python needed.
 3. Drop your assets in the `assets/` folder next to the EXE.
 
@@ -96,47 +96,62 @@ All installed by `setup.bat`.
 ## Using Cosmoteer Image Destroyer
 Image Destroyer lets you “damage” a sprite by punching real holes (alpha cut-outs), burning the edges, and sprinkling scorches/shrapnel — all driven by tile stencils you control.
 
-1) Start & drag-and-drop (screenshot 1)
+### 1) Start & drag-and-drop (screenshot 1)
 
-Launch the app.
+**Launch** the app.
+**Drag & drop** a PNG onto the large preview area, or click Load Base… and pick a file.
+*The app remembers your last Load/Save folder between runs.*
 
-Drag & drop a PNG onto the large preview area, or click Load Base… and pick a file.
+<div align="center">
+<img width="1184" height="800" alt="Figure 1 - Start screen" src="https://github.com/user-attachments/assets/f4053bf3-4616-4239-a0ed-a448825671b2" />
+<br>  
+<i>Figure 1 — Start screen: drag a PNG into the preview or use Load Base….</i>
+<br>
+</div>
 
-The app remembers your last Load/Save folder between runs.
 
-Figure 1 — Start screen: drag a PNG into the preview or use Load Base….
+### 2) Pick a damage preset (screenshot 2)
 
-2) Pick a damage preset (screenshot 2)
-Use Damage level to select 33, 50, or 66.
+Use **Damage level** to select 33, 50, or 66.
 
 This controls default densities and which hole stencils are used:
+```
+* 33 → uses *_33.png stencils
+* 50 → mixes *_33.png + *_66.png
+* 66 → uses *_66.png stencils
+```
 
-33 → uses *_33.png stencils
+Number Sliders auto-populate to sane defaults (you can tweak anytime):
+```
+* Holes: Tile density (default: 33→0.20, 50→0.30, 66→0.40).
+* Holes only affect pixels that were already opaque in your base.
 
-50 → mixes *_33.png + *_66.png
+* Scorches: Density & Severity (defaults: density per level; severity 0.90; min scale 0.50; max 1.00; rot 180°).
+* Scorches never land over empty (transparent) pixels.
 
-66 → uses *_66.png stencils
+* Shrapnel: Optional layer with its own density/severity (defaults: severity 0.85; min 0.05; max 0.30; rot 180°).
+```
+  
+<div align="center"> 
+<img width="1186" height="797" alt="Figure 2 - Damage presets" src="https://github.com/user-attachments/assets/9866bf6a-ec98-442e-a3e3-21e9ccd436d4" />
+<br>
+<i>Figure 2 — Damage presets: switching between _33 and _66 adjusts density and picks matching stencils.</i>
+  <br>
+</div>
 
-Sliders auto-populate to sane defaults (you can tweak anytime):
+### 3) Save with auto filename (screenshot 3)
 
-Holes: Tile density (default: 33→0.20, 50→0.30, 66→0.40).
-Holes only affect pixels that were already opaque in your base.
+Click **Save** Result….
 
-Scorches: Density & Severity (defaults: density per level; severity 0.90; min scale 0.50; max 1.00; rot 180°).
-Scorches never land over empty (transparent) pixels.
-
-Shrapnel: Optional layer with its own density/severity (defaults: severity 0.85; min 0.05; max 0.30; rot 180°).
-
-Figure 2 — Damage presets: switching between _33 and _66 adjusts density and picks matching stencils.
-
-3) Save with auto filename (screenshot 3)
-Click Save Result….
-
-The dialog proposes <original>_<level>.png (e.g., floor_33.png, floor_66.png, floor_50.png) in your last save folder.
+*The dialog proposes <original>_<level>.png (e.g., floor_33.png, floor_66.png, floor_50.png) in your last save folder.*
 
 You can change the name/location as needed; the image saves as PNG with real transparency.
-
-Figure 3 — Save dialog: auto-suggested name includes the selected level suffix.
+<div align="center"> 
+<img width="1194" height="796" alt="Figure 3 - Save dialog" src="https://github.com/user-attachments/assets/0a0ba416-9561-41e3-8e6b-a1a0c89453ab" />
+<br>
+<i>Figure 3 — Save dialog: auto-suggested name includes the selected level suffix.</i>
+  <br>
+</div>
 ---
 
 ## License
@@ -145,7 +160,7 @@ MIT. See `LICENSE`.
 
 *Not affiliated with Cosmoteer or Walternate Realities.*
 
-```
+
 I do this for fun but if you feel compelled to support development you may do so by scanning the QR code or clicking the button below. 
 
 <div align="center">
