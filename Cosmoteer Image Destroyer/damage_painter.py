@@ -86,7 +86,7 @@ def stamp_layer(base_size, stamps, count, min_scale, max_scale, max_rot, strengt
     if not stamps or count <= 0 or strength <= 0: return layer
 
     for _ in range(count):
-        s = random.choice(stamps).convert("RGBA")
+        s = rnd.choice(stamps).convert("RGBA")
         s_factor = min(1.0, max(min_scale, min(max_scale, rnd.uniform(min_scale, max_scale))))
         nw = max(1, int(s.width * s_factor)); nh = max(1, int(s.height * s_factor))
         s2 = s.resize((nw, nh), Image.LANCZOS)
@@ -124,7 +124,7 @@ def apply_stencil_holes(base: Image.Image,
     Returns (result_base_with_holes, holes_mask_white, cover_layer_rgba).
     Only changes where base_alpha_init > 0.
     """
-    rnd = random.Random(seed)
+    # rnd = random.Random(seed)
     W,H = base.size
     result = ensure_rgba(base).copy()
     holes_mask = Image.new("L",(W,H),0)
@@ -139,32 +139,44 @@ def apply_stencil_holes(base: Image.Image,
 
     for gy in range(rows):
         for gx in range(cols):
-            if rnd.random() > density:
+            # per-cell RNG: same seed + cell coords = stable, additive
+            cell_seed = (seed << 20) ^ (gx * 73856093) ^ (gy * 19349663)
+            rng = random.Random(cell_seed)
+    
+            # include if r <= density (additive when density increases)
+            if rng.random() > density:
                 continue
-            key = rnd.choice(keys)
+            
+            # keys are pre-sorted; stable index
+            key = keys[rng.randrange(len(keys))]
+    
+            # LOAD the images BEFORE rotating (this was missing)
             p_img = Image.open(punch_map[key]).convert("RGBA")
             c_img = Image.open(cover_map[key]).convert("RGBA")
-
-            k = rnd.randint(0,3)
-            p_img = rotate_90(p_img, k)
-            c_img = rotate_90(c_img, k)
-
+    
+            # stable rotation in 90° steps
+            k = rng.randrange(4)
+            if k:
+                p_img = rotate_90(p_img, k)
+                c_img = rotate_90(c_img, k)
+    
+            # cell box
             x0 = gx*tile_size; y0 = gy*tile_size
             x1 = min(x0+tile_size, W); y1 = min(y0+tile_size, H)
             cw, ch = x1-x0, y1-y0
             if p_img.size != (cw,ch):
                 p_img = p_img.crop((0,0,cw,ch))
                 c_img = c_img.crop((0,0,cw,ch))
-
+    
             # Opaque in punch -> HOLE (binary), then limit to where base had pixels
             a = p_img.split()[-1]
             tile_hole = a.point(lambda v: 255 if v >= 8 else 0)
-
+    
             base_a_cell = base_alpha_init.crop((x0,y0,x1,y1)).point(lambda v: 255 if v>0 else 0)
             tile_hole = ImageChops.multiply(tile_hole, base_a_cell)  # prevent holes over empty base
-
+    
             holes_mask.paste(tile_hole, (x0,y0))
-
+    
             # Cover only inside the hole pixels & only where base existed
             cov = c_img.copy()
             cr,cg,cb,ca = cov.split()
