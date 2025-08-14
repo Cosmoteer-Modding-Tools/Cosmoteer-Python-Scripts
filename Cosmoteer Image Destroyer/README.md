@@ -11,7 +11,7 @@
 
 ## 🟢 Recommended: Just Download the EXE!
 
-1. Grab **ImageDestroyer.exe** from Releases.
+1. Grab **ImageDestroyer.exe** from [Releases](https://github.com/Cosmoteer-Modding-Tools/Cosmoteer-Python-Scripts/releases/tag/imagedestroyer-v1.0).
 2. Double-click to run — no Python needed.
 3. Drop your assets in the `assets/` folder next to the EXE.
 
