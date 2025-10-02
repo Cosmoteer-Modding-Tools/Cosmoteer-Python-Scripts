@@ -21,3 +21,5 @@ EasyGridLocations/screenshots/*/
 EasyGridLocations/EasyGridLocations_Assets_v121.zip
 Cosmoteer Image Destroyer/damage_painter_backup.py
 Cosmoteer Image Destroyer/backup/*
+**/__pycache__/
+**/backup/
