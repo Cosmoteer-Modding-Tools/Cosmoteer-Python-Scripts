@@ -7,10 +7,12 @@
 # Z-order: Z3 scorches | Z2 shrapnel | Z1 base with real holes | Z0 covers inside holes
 # Holes never affect already-transparent base pixels.
 # Presets/levels: 33, 50 (mix of 33/66), 66 with the densities you specified.
+#TODO Shrapnel is currently processing as one large file. Maybe 128x? Anything in that folder should be automatically interpreted as 64px tiles that are randomly displayed when used. The functionality should work the same as it is at its core, just tiled correctly.  It appears to be scaling the whole image and displaying it rather than treating it like a tiled stamps that can be scaled.  Again it should work with the ability to toggle art assets that are mutually exclusive if setup in folders (see how hole covers are implemented).  Anything outside of the folder but within the shrapnel folder should be treated as "always used in the random generation" regardless of the menu item select.  "Default" setting should exclude sub folders    
 #
 import os, sys, random
 from pathlib import Path
 from dataclasses import dataclass
+from typing import Optional
 
 from PySide6.QtCore import Qt, QTimer, QSize, QEvent, QSettings, QThread
 from PySide6.QtGui import QImage, QPixmap, QGuiApplication
@@ -218,21 +220,27 @@ class Params:
     # Misc
     seed: int = 1337
     damage_level: str = "33"     # "33" | "50" | "66"
+    cover_set: str = "Default"   # Default uses only root-level covers
 
 # -----------------------------
 # Main pipeline (adds 50 mix)
 # -----------------------------
 def apply_pipeline(base: Image.Image, assets_root: str, p: Params,
-                   enable_holes: bool, enable_scorches: bool, enable_shrapnel: bool):
+                   enable_holes: bool, enable_scorches: bool, enable_shrapnel: bool,
+                   cover_maps: Optional[dict] = None):
     W,H = base.size
     base_rgba = ensure_rgba(base)
     base_alpha_init = base_rgba.split()[-1]
 
     root = Path(assets_root)
     punch33 = group_stencils_by_suffix(str(root / "hole_punch"), "33")
-    cover33 = group_stencils_by_suffix(str(root / "hole_covers"), "33")
+    if cover_maps is None:
+        cover33 = group_stencils_by_suffix(str(root / "hole_covers"), "33")
+        cover66 = group_stencils_by_suffix(str(root / "hole_covers"), "66")
+    else:
+        cover33 = cover_maps.get("33", {})
+        cover66 = cover_maps.get("66", {})
     punch66 = group_stencils_by_suffix(str(root / "hole_punch"), "66")
-    cover66 = group_stencils_by_suffix(str(root / "hole_covers"), "66")
 
     scorch_imgs = [ensure_rgba(Image.open(str(f))) for f in scan_folder_images(str(root / "scorches"))]
     shrap_imgs  = [ensure_rgba(Image.open(str(f))) for f in scan_folder_images(str(root / "shrapnel"))]
@@ -317,6 +325,9 @@ class App(QMainWindow):
         self.assets_root = rsrc("assets")
         self.base = None
         self.params = Params()
+        self.cover_always = {"33": {}, "66": {}}
+        self.cover_sets = {}
+        self._cover_dir_stamp = None
         self.preview_img = None
         self.settings = QSettings("CosmoteerTools", "ImageDestroyer") # remember last used directories
 
@@ -347,6 +358,7 @@ class App(QMainWindow):
     def _set_last_open_dir(self, path: str) -> None:
         d = os.path.dirname(path) if os.path.splitext(path)[1] else path
         self.settings.setValue("last_open_dir", d)
+        self.settings.setValue("last_save_dir", d)
         self.settings.setValue("last_dir", d)
     
     def _set_last_save_dir(self, path: str) -> None:
@@ -393,10 +405,13 @@ class App(QMainWindow):
         for wdg in (self.en_holes, self.sp_density, self.sp_rimw, self.sp_rimd):
             if hasattr(wdg,'stateChanged'): wdg.stateChanged.connect(lambda *_: self.timer.start(30))
             else: wdg.valueChanged.connect(lambda *_: self.timer.start(30))
+        self.cb_cover_set = QComboBox()
+        self.cb_cover_set.currentIndexChanged.connect(self._on_cover_set_changed)
         fH.addRow(self.en_holes)
         fH.addRow("Tile density (0..1)", self.sp_density)
         fH.addRow("Rim width", self.sp_rimw)
         fH.addRow("Rim darkness", self.sp_rimd)
+        fH.addRow("Hole cover set", self.cb_cover_set)
         root.addWidget(gH)
 
         gS = QGroupBox("Scorches"); fS = QFormLayout(); gS.setLayout(fS)
@@ -442,7 +457,94 @@ class App(QMainWindow):
         row.addWidget(lbl); row.addWidget(self.sp_seed); row.addWidget(self.btn_reroll); row.addStretch()
         root.addLayout(row)
 
+        self._populate_cover_sets(force=True)
         root.addStretch(); return w
+
+    @staticmethod
+    def _format_cover_label(name: str) -> str:
+        cleaned = name.replace("_", " ").replace("-", " ").strip()
+        return cleaned.title() if cleaned else name.title()
+
+    def _populate_cover_sets(self, force: bool = False) -> None:
+        cover_root = Path(self.assets_root) / "hole_covers"
+        exists = cover_root.exists()
+        root_stat = None
+        entries = []
+        if exists:
+            try:
+                root_stat = cover_root.stat()
+            except OSError:
+                root_stat = None
+            try:
+                entries = list(cover_root.iterdir())
+            except OSError:
+                entries = []
+
+        stamp = None
+        if exists:
+            root_stamp = getattr(root_stat, "st_mtime_ns", None) if root_stat is not None else None
+            sub_stamps = []
+            for sub in entries:
+                if sub.is_dir():
+                    try:
+                        sub_stat = sub.stat()
+                        sub_stamp = getattr(sub_stat, "st_mtime_ns", None)
+                    except OSError:
+                        sub_stamp = None
+                    sub_stamps.append((sub.name, sub_stamp))
+            stamp = (root_stamp, tuple(sorted(sub_stamps)))
+
+        if not force and stamp == self._cover_dir_stamp:
+            return
+
+        self._cover_dir_stamp = stamp
+
+        if exists:
+            always33 = group_stencils_by_suffix(str(cover_root), "33")
+            always66 = group_stencils_by_suffix(str(cover_root), "66")
+        else:
+            always33 = {}
+            always66 = {}
+        self.cover_always = {"33": always33, "66": always66}
+
+        cover_sets = {}
+        if exists:
+            subdirs = sorted((p for p in entries if p.is_dir()), key=lambda p: p.name.lower())
+            for sub in subdirs:
+                label = self._format_cover_label(sub.name)
+                cover_sets[label] = {
+                    "33": group_stencils_by_suffix(str(sub), "33"),
+                    "66": group_stencils_by_suffix(str(sub), "66"),
+                }
+        self.cover_sets = cover_sets
+
+        desired = self.params.cover_set if getattr(self.params, "cover_set", None) else "Default"
+        self.cb_cover_set.blockSignals(True)
+        self.cb_cover_set.clear()
+        self.cb_cover_set.addItem("Default")
+        for label in sorted(self.cover_sets.keys(), key=str.casefold):
+            self.cb_cover_set.addItem(label)
+        idx = self.cb_cover_set.findText(desired)
+        if idx < 0:
+            idx = 0
+            self.params.cover_set = "Default"
+        self.cb_cover_set.setCurrentIndex(idx)
+        self.cb_cover_set.blockSignals(False)
+        self.params.cover_set = self.cb_cover_set.currentText()
+
+    def _cover_maps_for(self, label: str) -> dict:
+        combined33 = dict(self.cover_always.get("33", {}))
+        combined66 = dict(self.cover_always.get("66", {}))
+        if label != "Default":
+            selected = self.cover_sets.get(label)
+            if selected:
+                combined33.update(selected.get("33", {}))
+                combined66.update(selected.get("66", {}))
+        return {"33": combined33, "66": combined66}
+
+    def _on_cover_set_changed(self, *_):
+        self.params.cover_set = self.cb_cover_set.currentText()
+        self.timer.start(30)
 
     # --- events ---
     def eventFilter(self, obj, ev):
@@ -454,7 +556,7 @@ class App(QMainWindow):
                 p = url.toLocalFile()
                 if p:
                     self.le_base.setText(p)
-                    self._set_last_open_dir(p)  # <-- remember folder from drag-drop
+                    self._set_last_open_dir(p)
                     self._load_base()
                 ev.acceptProposedAction()
                 return True
@@ -527,13 +629,19 @@ class App(QMainWindow):
         self.params.shrap_density = float(self.sp_pdens.value()); self.params.shrap_severity = float(self.sp_psev.value())
         self.params.shrap_min_scale = float(self.sp_pmin.value()); self.params.shrap_max_scale = float(self.sp_pmax.value()); self.params.shrap_max_rot = float(self.sp_prot.value())
 
+        self._populate_cover_sets()
+        cover_choice = self.cb_cover_set.currentText() if hasattr(self, "cb_cover_set") and self.cb_cover_set.count() else "Default"
+        self.params.cover_set = cover_choice
+        cover_maps = self._cover_maps_for(cover_choice)
+
         out = apply_pipeline(
             base=self.base,
             assets_root=self.assets_root,
             p=self.params,
             enable_holes=self.en_holes.isChecked(),
             enable_scorches=self.en_scorches.isChecked(),
-            enable_shrapnel=self.en_shrap.isChecked()
+            enable_shrapnel=self.en_shrap.isChecked(),
+            cover_maps=cover_maps
         )
         self.preview_img = out
         self.preview.setPixmap(qpm(out).scaled(self.preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
@@ -584,3 +692,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
