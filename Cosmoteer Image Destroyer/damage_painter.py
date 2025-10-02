@@ -7,12 +7,11 @@
 # Z-order: Z3 scorches | Z2 shrapnel | Z1 base with real holes | Z0 covers inside holes
 # Holes never affect already-transparent base pixels.
 # Presets/levels: 33, 50 (mix of 33/66), 66 with the densities you specified.
-#TODO Shrapnel is currently processing as one large file. Maybe 128x? Anything in that folder should be automatically interpreted as 64px tiles that are randomly displayed when used. The functionality should work the same as it is at its core, just tiled correctly.  It appears to be scaling the whole image and displaying it rather than treating it like a tiled stamps that can be scaled.  Again it should work with the ability to toggle art assets that are mutually exclusive if setup in folders (see how hole covers are implemented).  Anything outside of the folder but within the shrapnel folder should be treated as "always used in the random generation" regardless of the menu item select.  "Default" setting should exclude sub folders    
 #
 import os, sys, random
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 
 from PySide6.QtCore import Qt, QTimer, QSize, QEvent, QSettings, QThread
 from PySide6.QtGui import QImage, QPixmap, QGuiApplication
@@ -52,6 +51,35 @@ def group_stencils_by_suffix(folder: str, suffix: str):
             key = stem.rsplit("_", 1)[0]
             out[key] = f
     return out
+
+def load_tiled_rgba_images(path: Path, tile_sizes=(64, 128)) -> List[Image.Image]:
+    path = Path(path)
+    tiles: List[Image.Image] = []
+    try:
+        with Image.open(str(path)) as src:
+            src = ensure_rgba(src)
+            src.load()
+            w, h = src.size
+            chosen = None
+            for size in tile_sizes:
+                if w >= size and h >= size and w % size == 0 and h % size == 0:
+                    chosen = size
+                    break
+            if chosen is None:
+                tiles.append(src.copy())
+            else:
+                for top in range(0, h, chosen):
+                    for left in range(0, w, chosen):
+                        box = (left, top, left + chosen, top + chosen)
+                        if box[2] <= w and box[3] <= h:
+                            tile = src.crop(box)
+                            if tile.size == (chosen, chosen):
+                                tiles.append(tile.copy())
+                if not tiles:
+                    tiles.append(src.copy())
+    except Exception:
+        return tiles
+    return tiles
 
 def rotate_90(img: Image.Image, k: int) -> Image.Image:
     k %= 4
@@ -217,17 +245,19 @@ class Params:
     shrap_min_scale: float = 0.05
     shrap_max_scale: float = 0.30
     shrap_max_rot: float = 180.0
+    shrap_set: str = "Default"
     # Misc
     seed: int = 1337
     damage_level: str = "33"     # "33" | "50" | "66"
-    cover_set: str = "Default"   # Default uses only root-level covers
+    cover_set: str = "Steel"   # Default uses only root-level covers
 
 # -----------------------------
 # Main pipeline (adds 50 mix)
 # -----------------------------
 def apply_pipeline(base: Image.Image, assets_root: str, p: Params,
                    enable_holes: bool, enable_scorches: bool, enable_shrapnel: bool,
-                   cover_maps: Optional[dict] = None):
+                   cover_maps: Optional[dict] = None,
+                   shrap_tiles: Optional[List[Image.Image]] = None):
     W,H = base.size
     base_rgba = ensure_rgba(base)
     base_alpha_init = base_rgba.split()[-1]
@@ -243,7 +273,12 @@ def apply_pipeline(base: Image.Image, assets_root: str, p: Params,
     punch66 = group_stencils_by_suffix(str(root / "hole_punch"), "66")
 
     scorch_imgs = [ensure_rgba(Image.open(str(f))) for f in scan_folder_images(str(root / "scorches"))]
-    shrap_imgs  = [ensure_rgba(Image.open(str(f))) for f in scan_folder_images(str(root / "shrapnel"))]
+    if shrap_tiles is None:
+        shrap_tiles = []
+        shrap_root = root / "shrapnel"
+        for f in scan_folder_images(str(shrap_root)):
+            shrap_tiles.extend(load_tiled_rgba_images(f))
+    shrap_imgs = list(shrap_tiles)
 
     tile_size = 64
     for f in list(punch33.values()) + list(punch66.values()):
@@ -328,6 +363,9 @@ class App(QMainWindow):
         self.cover_always = {"33": {}, "66": {}}
         self.cover_sets = {}
         self._cover_dir_stamp = None
+        self.shrap_always = []
+        self.shrap_sets = {}
+        self._shrap_dir_stamp = None
         self.preview_img = None
         self.settings = QSettings("CosmoteerTools", "ImageDestroyer") # remember last used directories
 
@@ -411,7 +449,7 @@ class App(QMainWindow):
         fH.addRow("Tile density (0..1)", self.sp_density)
         fH.addRow("Rim width", self.sp_rimw)
         fH.addRow("Rim darkness", self.sp_rimd)
-        fH.addRow("Hole cover set", self.cb_cover_set)
+        fH.addRow("Asset set", self.cb_cover_set)
         root.addWidget(gH)
 
         gS = QGroupBox("Scorches"); fS = QFormLayout(); gS.setLayout(fS)
@@ -439,10 +477,12 @@ class App(QMainWindow):
         self.sp_pmin  = QDoubleSpinBox(); self.sp_pmin.setRange(0.05,1.0); self.sp_pmin.setSingleStep(0.05); self.sp_pmin.setValue(self.params.shrap_min_scale)
         self.sp_pmax  = QDoubleSpinBox(); self.sp_pmax.setRange(0.05,1.0); self.sp_pmax.setSingleStep(0.05); self.sp_pmax.setValue(self.params.shrap_max_scale)
         self.sp_prot  = QDoubleSpinBox(); self.sp_prot.setRange(0,180); self.sp_prot.setSingleStep(5.0); self.sp_prot.setValue(self.params.shrap_max_rot)
+        self.cb_shrap_set = QComboBox(); self.cb_shrap_set.currentIndexChanged.connect(self._on_shrap_set_changed)
         for wdg in (self.en_shrap, self.sp_pdens, self.sp_psev, self.sp_pmin, self.sp_pmax, self.sp_prot):
             if hasattr(wdg,'stateChanged'): wdg.stateChanged.connect(lambda *_: self.timer.start(30))
             else: wdg.valueChanged.connect(lambda *_: self.timer.start(30))
         fP.addRow(self.en_shrap)
+        fP.addRow("Asset set", self.cb_shrap_set)
         fP.addRow("Density", self.sp_pdens)
         fP.addRow("Severity", self.sp_psev)
         fP.addRow("Min scale", self.sp_pmin)
@@ -457,6 +497,7 @@ class App(QMainWindow):
         row.addWidget(lbl); row.addWidget(self.sp_seed); row.addWidget(self.btn_reroll); row.addStretch()
         root.addLayout(row)
 
+        self._populate_shrap_sets(force=True)
         self._populate_cover_sets(force=True)
         root.addStretch(); return w
 
@@ -464,6 +505,83 @@ class App(QMainWindow):
     def _format_cover_label(name: str) -> str:
         cleaned = name.replace("_", " ").replace("-", " ").strip()
         return cleaned.title() if cleaned else name.title()
+
+    def _populate_shrap_sets(self, force: bool = False) -> None:
+        shrap_root = Path(self.assets_root) / "shrapnel"
+        exists = shrap_root.exists()
+        entries = []
+        root_stat = None
+        if exists:
+            try:
+                root_stat = shrap_root.stat()
+            except OSError:
+                root_stat = None
+            try:
+                entries = list(shrap_root.iterdir())
+            except OSError:
+                entries = []
+        root_stamp = getattr(root_stat, "st_mtime_ns", None) if root_stat is not None else None
+
+        file_stamps = []
+        dir_stamps = []
+        for entry in entries:
+            try:
+                entry_stat = entry.stat()
+            except OSError:
+                continue
+            stamp = getattr(entry_stat, "st_mtime_ns", None)
+            if entry.is_file():
+                file_stamps.append((entry.name, stamp, getattr(entry_stat, "st_size", None)))
+            elif entry.is_dir():
+                dir_stamps.append((entry.name, stamp))
+
+        stamp = (root_stamp, tuple(sorted(file_stamps)), tuple(sorted(dir_stamps)))
+        if not force and stamp == self._shrap_dir_stamp:
+            return
+        self._shrap_dir_stamp = stamp
+
+        always_tiles: List[Image.Image] = []
+        for entry in entries:
+            if entry.is_file():
+                always_tiles.extend(load_tiled_rgba_images(entry))
+        self.shrap_always = always_tiles
+
+        shrap_sets = {}
+        for sub in sorted((p for p in entries if p.is_dir()), key=lambda p: p.name.lower()):
+            tiles: List[Image.Image] = []
+            for img_path in scan_folder_images(str(sub)):
+                tiles.extend(load_tiled_rgba_images(img_path))
+            if tiles:
+                label = self._format_cover_label(sub.name)
+                shrap_sets[label] = tiles
+        self.shrap_sets = shrap_sets
+
+        desired = self.params.shrap_set if getattr(self.params, "shrap_set", None) else "Default"
+        combo = getattr(self, "cb_shrap_set", None)
+        if combo is None:
+            return
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("Default")
+        for label in sorted(self.shrap_sets.keys(), key=str.casefold):
+            combo.addItem(label)
+        idx = combo.findText(desired)
+        if idx < 0:
+            idx = 0
+            self.params.shrap_set = "Default"
+        combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+        self.params.shrap_set = combo.currentText()
+
+    def _shrap_tiles_for(self, label: str) -> List[Image.Image]:
+        tiles = list(self.shrap_always)
+        if label != "Default":
+            tiles.extend(self.shrap_sets.get(label, []))
+        return tiles
+
+    def _on_shrap_set_changed(self, *_):
+        self.params.shrap_set = self.cb_shrap_set.currentText()
+        self.timer.start(30)
 
     def _populate_cover_sets(self, force: bool = False) -> None:
         cover_root = Path(self.assets_root) / "hole_covers"
@@ -591,7 +709,7 @@ class App(QMainWindow):
 
         self.sp_psev.setValue(0.85)
         self.sp_pmin.setValue(0.05)
-        self.sp_pmax.setValue(0.30)
+        self.sp_pmax.setValue(1.00)
         self.sp_prot.setValue(180.0)
 
         self.timer.start(10)
@@ -629,6 +747,11 @@ class App(QMainWindow):
         self.params.shrap_density = float(self.sp_pdens.value()); self.params.shrap_severity = float(self.sp_psev.value())
         self.params.shrap_min_scale = float(self.sp_pmin.value()); self.params.shrap_max_scale = float(self.sp_pmax.value()); self.params.shrap_max_rot = float(self.sp_prot.value())
 
+        self._populate_shrap_sets()
+        shrap_choice = self.cb_shrap_set.currentText() if hasattr(self, "cb_shrap_set") and self.cb_shrap_set.count() else "Default"
+        self.params.shrap_set = shrap_choice
+        shrap_tiles = self._shrap_tiles_for(shrap_choice)
+
         self._populate_cover_sets()
         cover_choice = self.cb_cover_set.currentText() if hasattr(self, "cb_cover_set") and self.cb_cover_set.count() else "Default"
         self.params.cover_set = cover_choice
@@ -641,7 +764,8 @@ class App(QMainWindow):
             enable_holes=self.en_holes.isChecked(),
             enable_scorches=self.en_scorches.isChecked(),
             enable_shrapnel=self.en_shrap.isChecked(),
-            cover_maps=cover_maps
+            cover_maps=cover_maps,
+            shrap_tiles=shrap_tiles
         )
         self.preview_img = out
         self.preview.setPixmap(qpm(out).scaled(self.preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
