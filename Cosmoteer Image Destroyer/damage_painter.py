@@ -355,7 +355,7 @@ def apply_pipeline(base: Image.Image, assets_root: str, p: Params,
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Cosmoteer Image Destroyer v1.0")
+        self.setWindowTitle("Cosmoteer Image Destroyer v1.4")
 
         self.assets_root = rsrc("assets")
         self.base = None
