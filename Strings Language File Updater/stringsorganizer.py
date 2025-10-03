@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+#TODO: This app should be able to use pyinstaller to build an exe.  I have added a build_app.bat (used in a different repo) that uses PyInstaller to build a single file exe.  I'd like to update this file to work with this particular repository and its requirements.  the venv should be in the same folder, it will still use default_images for the splash screen, etc.)
+#TODO: This app should have translation functionality that is careful not to break any inline syntax/coding properties. A guide for syntax is available at (docs\Cosmoteer – Strings Guide.md) a translate button that uses a free api to translate the base file into the selected languages.
 # pip install PySide6 qdarkstyle
 
 import os
@@ -11,7 +12,7 @@ import sys
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QFileDialog,
+    QLineEdit, QComboBox, QPushButton, QFileDialog,
     QMessageBox, QCheckBox, QScrollArea,
     QTabWidget, QPlainTextEdit
 )
@@ -63,11 +64,10 @@ class RulesLocalizationTool(QMainWindow):
         # Base file selector
         base_layout = QHBoxLayout()
         base_layout.addWidget(QLabel("Base Template (.rules):"))
-        self.base_edit = QLineEdit()
-        base_layout.addWidget(self.base_edit, 1)
-        btn_base = QPushButton("Browse…")
-        btn_base.clicked.connect(self._select_base_file)
-        base_layout.addWidget(btn_base)
+        self.base_combo = QComboBox()
+        self.base_combo.setEnabled(False)
+        self.base_combo.currentIndexChanged.connect(self._on_base_combo_changed)
+        base_layout.addWidget(self.base_combo, 1)
         layout.addLayout(base_layout)
 
         # Language checkboxes
@@ -92,6 +92,7 @@ class RulesLocalizationTool(QMainWindow):
         path = QFileDialog.getExistingDirectory(self, "Select Strings Directory")
         if path:
             self.dir_edit.setText(path)
+            self._populate_base_combo(path)
             self._populate_language_list(path)
 
     def _populate_language_list(self, directory):
@@ -105,11 +106,38 @@ class RulesLocalizationTool(QMainWindow):
                 self.language_checkboxes[code] = cb
         self.lang_layout.addStretch()
 
-    def _select_base_file(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Select Base .rules File", filter="*.rules")
-        if path:
-            self.base_edit.setText(path)
-            self._load_base_file(path)
+    def _populate_base_combo(self, directory):
+        self.base_combo.blockSignals(True)
+        self.base_combo.clear()
+        self.base_tokens.clear(); self.base_map.clear()
+        if os.path.isdir(directory):
+            rules_files = sorted(
+                fname for fname in os.listdir(directory)
+                if fname.lower().endswith('.rules')
+            )
+        else:
+            rules_files = []
+        for fname in rules_files:
+            full_path = os.path.join(directory, fname)
+            self.base_combo.addItem(fname, full_path)
+        self.base_combo.setEnabled(bool(rules_files))
+        if rules_files:
+            self.base_combo.setCurrentIndex(0)
+        self.base_combo.blockSignals(False)
+        if rules_files:
+            self._load_base_file(self.base_combo.currentData())
+
+    def _on_base_combo_changed(self, index):
+        if index < 0:
+            self.base_tokens.clear()
+            self.base_map.clear()
+            return
+        path = self.base_combo.itemData(index)
+        if not path:
+            self.base_tokens.clear()
+            self.base_map.clear()
+            return
+        self._load_base_file(path)
 
     def _load_base_file(self, path):
         """Parse base .rules into tokens and base_map"""
