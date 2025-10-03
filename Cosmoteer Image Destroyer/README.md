@@ -5,7 +5,9 @@
 
 - Holes are cut only where your base image is non-transparent.
 - Hole covers are pasted into the cutouts with matching rotation and tile alignment.
+- Covers placed directly in `assets/hole_covers` stay in the random pool for every run, while named subfolders (e.g., `Steel`, `Doonium`, `Durasteel`) appear in the in-app **Hole cover set** menu so you can target specific materials.
 - Scorches/shrapnel never appear over empty (fully transparent) pixels.
+- Shrapnel stamping now uses improved tiling/randomization for a more natural scatter.
 
 ---
 
@@ -65,7 +67,7 @@ project/
       ... (optional, same as scorches)
 ```
 
-**Dynamic loading:** Add or remove files at will; the app scans these folders at runtime.
+**Dynamic loading:** Add or remove files at will; the app scans these folders at runtime. Hole covers at the root of `assets/hole_covers` remain global, and any subfolder becomes its own option in the **Hole cover set** dropdown (e.g., `assets/hole_covers/Steel`).
 **Naming for levels:** `*_33.png` and `*_66.png` are detected automatically. Level **50** splits hole density between `_33` and `_66`.
 
 ---
@@ -100,7 +102,7 @@ Image Destroyer lets you “damage” a sprite by punching real holes (alpha cut
 
 **Launch** the app.
 **Drag & drop** a PNG onto the large preview area, or click Load Base… and pick a file.
-*The app remembers your last Load/Save folder between runs.*
+*The app keeps the Load and Save dialogs in sync, remembering the last folder you opened or dropped from (including drag-and-drop).*
 
 <div align="center">
 <img width="1184" height="800" alt="Figure 1 - Start screen" src="https://github.com/user-attachments/assets/f4053bf3-4616-4239-a0ed-a448825671b2" />
@@ -131,7 +133,9 @@ Number Sliders auto-populate to sane defaults (you can tweak anytime):
 
 * Shrapnel: Optional layer with its own density/severity (defaults: severity 0.85; min 0.05; max 0.30; rot 180°).
 ```
-  
+
+Use the **Hole cover set** menu to swap between any subfolders inside `assets/hole_covers`. Root-level covers always stay active, so choosing something like `Steel` layers material-specific inserts on top of the shared defaults.
+
 <div align="center"> 
 <img width="1186" height="797" alt="Figure 2 - Damage presets" src="https://github.com/user-attachments/assets/9866bf6a-ec98-442e-a3e3-21e9ccd436d4" />
 <br>
