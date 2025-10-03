@@ -1,6 +1,6 @@
 # Cosmoteer Python Scripts
 
-A collection of free, semi-useful, open-source tools for Cosmoteer modders, built by [Adam Rojas](https://buymeacoffee.com/arojassunt).  
+A collection of free, semi-useful, open-source tools for Cosmoteer modders, built by [Rojamahorse](https://buymeacoffee.com/arojassunt).  
 If you find these tools helpful, consider supporting development by scanning the QR code or clicking the button below or at the bottom of the page!
 
 <div align="center">
