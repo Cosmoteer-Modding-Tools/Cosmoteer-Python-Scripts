@@ -1,3 +1,4 @@
+#TODO: This app should be able to use pyinstaller to build an exe.  I have added a build_app.bat (used in a different repo) that uses PyInstaller to build a single file exe.  I'd like to update this file to work with this particular repository and its requirements.  the venv should be in the same folder, it will still use default_images for the splash screen, etc.)
 #TODO: This app should have translation functionality that is careful not to break any inline syntax/coding properties. A guide for syntax is available at (docs\Cosmoteer – Strings Guide.md) a translate button that uses a free api to translate the base file into the selected languages.
 # pip install PySide6 qdarkstyle
 
@@ -15,18 +16,13 @@ from PySide6.QtWidgets import (
     QMessageBox, QCheckBox, QScrollArea,
     QTabWidget, QPlainTextEdit
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt
 
 # Attempt to apply a dark style if available
 try:
     import qdarkstyle
 except ImportError:
     qdarkstyle = None
-
-try:
-    import pyi_splash
-except ImportError:
-    pyi_splash = None
 
 # matches lines like "Key = \"Value\"" (no semicolon)
 KV_PATTERN = re.compile(
@@ -274,10 +270,5 @@ class RulesLocalizationTool(QMainWindow):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    if qdarkstyle:
-        app.setStyleSheet(qdarkstyle.load_stylesheet())
-    win = RulesLocalizationTool()
-    win.show()
-    if pyi_splash is not None:
-        QTimer.singleShot(3500, getattr(pyi_splash, 'close', lambda: None))
-    sys.exit(app.exec())
+    if qdarkstyle: app.setStyleSheet(qdarkstyle.load_stylesheet())
+    win = RulesLocalizationTool(); win.show(); sys.exit(app.exec())

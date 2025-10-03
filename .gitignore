@@ -23,6 +23,3 @@ Cosmoteer Image Destroyer/damage_painter_backup.py
 Cosmoteer Image Destroyer/backup/*
 **/__pycache__/
 **/backup/
-Strings Language File Updater/.backup/stringsorganizer.py
-*/.backup/*
-Strings Language File Updater/build_with_pyinstaller.py
