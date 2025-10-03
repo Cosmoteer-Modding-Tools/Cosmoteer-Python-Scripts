@@ -1,4 +1,3 @@
-#TODO: This app should be able to use pyinstaller to build an exe.  I have added a build_app.bat (used in a different repo) that uses PyInstaller to build a single file exe.  I'd like to update this file to work with this particular repository and its requirements.  the venv should be in the same folder, it will still use default_images for the splash screen, etc.)
 #TODO: This app should have translation functionality that is careful not to break any inline syntax/coding properties. A guide for syntax is available at (docs\Cosmoteer – Strings Guide.md) a translate button that uses a free api to translate the base file into the selected languages.
 # pip install PySide6 qdarkstyle
 
@@ -14,15 +13,22 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QComboBox, QPushButton, QFileDialog,
     QMessageBox, QCheckBox, QScrollArea,
-    QTabWidget, QPlainTextEdit
+    QTabWidget, QPlainTextEdit, QSplitter,
+    QListWidget, QListWidgetItem
 )
-from PySide6.QtCore import Qt
+from PySide6.QtGui import QTextCursor
+from PySide6.QtCore import Qt, QTimer
 
 # Attempt to apply a dark style if available
 try:
     import qdarkstyle
 except ImportError:
     qdarkstyle = None
+
+try:
+    import pyi_splash
+except ImportError:
+    pyi_splash = None
 
 # matches lines like "Key = \"Value\"" (no semicolon)
 KV_PATTERN = re.compile(
@@ -44,6 +50,10 @@ class RulesLocalizationTool(QMainWindow):
         self.base_map = {}
         self.language_checkboxes = {}
         self.preview_editors = {}
+        self.preview_lists = {}
+        self.preview_line_maps = {}
+        self.copy_buttons = {}
+        self.selected_keys = {}
         self._build_ui()
 
     def _build_ui(self):
@@ -223,15 +233,17 @@ class RulesLocalizationTool(QMainWindow):
 
     def _generate_content(self, target_map):
         lines = []
+        line_map = {}
         for token in self.base_tokens:
             ttype = token[0]
-            if ttype in ('blank','comment','section_start','section_end'):
+            if ttype in ('blank', 'comment', 'section_start', 'section_end'):
                 lines.append(token[1])
             else:  # kv
                 _, indent, key, fullkey = token
                 val = target_map.get(fullkey, self.base_map.get(fullkey, '""'))
                 lines.append(f"{indent}{key} = {val}")
-        return "\n".join(lines)
+                line_map[fullkey] = len(lines) - 1
+        return "\n".join(lines), line_map
 
     def _do_preview(self):
         directory = self.dir_edit.text().strip()
@@ -242,16 +254,145 @@ class RulesLocalizationTool(QMainWindow):
             QMessageBox.warning(self, "Error", "Please select and load a base .rules file.")
             return
         self.tabs.clear(); self.preview_editors.clear()
+        self.preview_lists = {}
+        self.preview_line_maps = {}
+        self.copy_buttons = {}
+        self.selected_keys = {}
         for code, cb in self.language_checkboxes.items():
-            if not cb.isChecked(): continue
+            if not cb.isChecked():
+                continue
             path = os.path.join(directory, f"{code}.rules")
             target_map = self._parse_target(path)
-            content = self._generate_content(target_map)
-            editor = QPlainTextEdit(); editor.setPlainText(content)
+            content, line_map = self._generate_content(target_map)
+            missing_keys = []
+            for token in self.base_tokens:
+                if token[0] != "kv":
+                    continue
+                fullkey = token[3]
+                if fullkey not in target_map:
+                    missing_keys.append(fullkey)
+            editor = QPlainTextEdit()
+            editor.setPlainText(content)
             editor.setReadOnly(False)
-            font = editor.font(); font.setFamily('Consolas'); editor.setFont(font)
-            self.tabs.addTab(editor, code)
+            font = editor.font()
+            font.setFamily("Consolas")
+            editor.setFont(font)
+            splitter = QSplitter(Qt.Horizontal)
+            splitter.setChildrenCollapsible(False)
+            splitter.addWidget(editor)
+            keys_widget = QWidget()
+            keys_widget.setMinimumWidth(220)
+            keys_layout = QVBoxLayout(keys_widget)
+            keys_layout.setContentsMargins(0, 0, 0, 0)
+            header = QLabel(f"New Keys ({len(missing_keys)})")
+            header.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            keys_layout.addWidget(header)
+            keys_list = QListWidget()
+            keys_list.setSelectionMode(QListWidget.SingleSelection)
+            keys_list.setFocusPolicy(Qt.StrongFocus)
+            keys_list.setAlternatingRowColors(True)
+            if missing_keys:
+                for fullkey in missing_keys:
+                    item = QListWidgetItem(fullkey)
+                    item.setData(Qt.UserRole, fullkey)
+                    keys_list.addItem(item)
+                keys_list.setCurrentRow(0)
+            else:
+                placeholder = QListWidgetItem("No new keys")
+                placeholder.setFlags(Qt.NoItemFlags)
+                keys_list.addItem(placeholder)
+            keys_layout.addWidget(keys_list, 1)
+            splitter.addWidget(keys_widget)
+            button_panel = QWidget()
+            button_panel.setMinimumWidth(90)
+            button_layout = QVBoxLayout(button_panel)
+            button_layout.setContentsMargins(0, 0, 0, 0)
+            button_layout.addStretch()
+            copy_button = QPushButton("Copy Value")
+            copy_button.setEnabled(False)
+            copy_button.clicked.connect(lambda _=False, c=code: self._copy_selected_value(c))
+            button_layout.addWidget(copy_button)
+            button_layout.addStretch()
+            splitter.addWidget(button_panel)
+            splitter.setStretchFactor(0, 4)
+            splitter.setStretchFactor(1, 2)
+            splitter.setStretchFactor(2, 0)
+            keys_list.currentItemChanged.connect(lambda current, _prev, c=code: self._on_key_selected(c, current))
+            self.tabs.addTab(splitter, code)
             self.preview_editors[code] = editor
+            self.preview_lists[code] = keys_list
+            self.preview_line_maps[code] = line_map
+            self.copy_buttons[code] = copy_button
+            self.selected_keys[code] = None
+            if missing_keys:
+                current_item = keys_list.currentItem()
+                if current_item is not None:
+                    self._on_key_selected(code, current_item)
+
+    def _on_key_selected(self, code, item):
+        button = self.copy_buttons.get(code)
+        if item is None:
+            self.selected_keys[code] = None
+            if button:
+                button.setEnabled(False)
+            return
+        key = item.data(Qt.UserRole) if item is not None else None
+        if not key:
+            self.selected_keys[code] = None
+            if button:
+                button.setEnabled(False)
+            return
+        self.selected_keys[code] = key
+        if button:
+            button.setEnabled(True)
+        self._highlight_key(code, key)
+
+    def _highlight_key(self, code, fullkey):
+        editor = self.preview_editors.get(code)
+        line_map = self.preview_line_maps.get(code, {})
+        if not editor or fullkey not in line_map:
+            return
+        block = editor.document().findBlockByNumber(line_map[fullkey])
+        if not block.isValid():
+            return
+        cursor = editor.textCursor()
+        cursor.setPosition(block.position())
+        text = block.text()
+        eq_index = text.find('=')
+        if eq_index == -1:
+            cursor.movePosition(QTextCursor.EndOfBlock)
+            editor.setTextCursor(cursor)
+            editor.centerCursor()
+            editor.setFocus()
+            return
+        value_start = eq_index + 1
+        while value_start < len(text) and text[value_start] == ' ':
+            value_start += 1
+        start_pos = block.position() + value_start
+        cursor.setPosition(start_pos)
+        cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+        editor.setTextCursor(cursor)
+        editor.centerCursor()
+        editor.setFocus()
+
+    def _copy_selected_value(self, code):
+        key = self.selected_keys.get(code)
+        if not key:
+            return
+        editor = self.preview_editors.get(code)
+        line_map = self.preview_line_maps.get(code, {})
+        if not editor or key not in line_map:
+            return
+        block = editor.document().findBlockByNumber(line_map[key])
+        if not block.isValid():
+            return
+        text = block.text()
+        eq_index = text.find('=')
+        if eq_index == -1:
+            value = text.strip()
+        else:
+            value = text[eq_index + 1:].lstrip()
+        QApplication.clipboard().setText(value)
 
     def _apply_changes(self):
         directory = self.dir_edit.text().strip()
@@ -270,5 +411,10 @@ class RulesLocalizationTool(QMainWindow):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    if qdarkstyle: app.setStyleSheet(qdarkstyle.load_stylesheet())
-    win = RulesLocalizationTool(); win.show(); sys.exit(app.exec())
+    if qdarkstyle:
+        app.setStyleSheet(qdarkstyle.load_stylesheet())
+    win = RulesLocalizationTool()
+    win.show()
+    if pyi_splash is not None:
+        QTimer.singleShot(3500, getattr(pyi_splash, 'close', lambda: None))
+    sys.exit(app.exec())
