@@ -355,25 +355,48 @@ class RulesLocalizationTool(QMainWindow):
         block = editor.document().findBlockByNumber(line_map[fullkey])
         if not block.isValid():
             return
+        line_text = block.text()
+        value_text, start_offset, end_offset = self._get_value_info(line_text)
         cursor = editor.textCursor()
-        cursor.setPosition(block.position())
-        text = block.text()
-        eq_index = text.find('=')
-        if eq_index == -1:
-            cursor.movePosition(QTextCursor.EndOfBlock)
-            editor.setTextCursor(cursor)
-            editor.centerCursor()
-            editor.setFocus()
-            return
-        value_start = eq_index + 1
-        while value_start < len(text) and text[value_start] == ' ':
-            value_start += 1
-        start_pos = block.position() + value_start
-        cursor.setPosition(start_pos)
-        cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+        if start_offset is None or end_offset is None:
+            cursor.setPosition(block.position())
+            cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+        else:
+            start_pos = block.position() + start_offset
+            end_pos = block.position() + end_offset
+            cursor.setPosition(start_pos)
+            cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
         editor.setTextCursor(cursor)
         editor.centerCursor()
         editor.setFocus()
+
+    def _get_value_info(self, line):
+        m = KV_PATTERN.match(line)
+        if not m:
+            return None, None, None
+        value = m.group('value')
+        if value is None:
+            return None, None, None
+        eq_index = line.find('=')
+        start = eq_index + 1 if eq_index != -1 else 0
+        while start < len(line) and line[start].isspace():
+            start += 1
+        if start >= len(line):
+            return "", start, start
+        if value.startswith('"'):
+            idx = 1
+            escaped = False
+            while idx < len(value):
+                ch = value[idx]
+                if escaped:
+                    escaped = False
+                elif ch == '\\\\':
+                    escaped = True
+                elif ch == '"':
+                    return value[1:idx], start + 1, start + idx
+                idx += 1
+            return value[1:], start + 1, start + len(value)
+        return value, start, start + len(value)
 
     def _copy_selected_value(self, code):
         key = self.selected_keys.get(code)
@@ -387,11 +410,15 @@ class RulesLocalizationTool(QMainWindow):
         if not block.isValid():
             return
         text = block.text()
-        eq_index = text.find('=')
-        if eq_index == -1:
-            value = text.strip()
+        value_text, _start, _end = self._get_value_info(text)
+        if value_text is None:
+            eq_index = text.find('=')
+            if eq_index == -1:
+                value = text.strip()
+            else:
+                value = text[eq_index + 1:].lstrip()
         else:
-            value = text[eq_index + 1:].lstrip()
+            value = value_text
         QApplication.clipboard().setText(value)
 
     def _apply_changes(self):
@@ -418,3 +445,4 @@ if __name__ == '__main__':
     if pyi_splash is not None:
         QTimer.singleShot(3500, getattr(pyi_splash, 'close', lambda: None))
     sys.exit(app.exec())
+

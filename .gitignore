@@ -15,7 +15,6 @@ EasyGridLocations/test_examples
 EasyGridLocations/test.rules
 EasyGridLocations/backup/*
 EasyGridLocations/__pycache__/EasyGridLocationBackup.cpython-311.pyc
-.gitignore
 EasyGridLocations/EasyGridLocations_Assets.zip
 EasyGridLocations/screenshots/*/
 EasyGridLocations/EasyGridLocations_Assets_v121.zip
@@ -23,3 +22,8 @@ Cosmoteer Image Destroyer/damage_painter_backup.py
 Cosmoteer Image Destroyer/backup/*
 **/__pycache__/
 **/backup/
+Strings Language File Updater/.backup/stringsorganizer.py
+*/.backup/*
+Strings Language File Updater/build_with_pyinstaller.py
+**/.vscode/*
+*/.vscode/
